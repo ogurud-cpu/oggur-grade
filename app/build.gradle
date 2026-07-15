@@ -12,10 +12,22 @@ android {
         versionName "1.0"
     }
 
+    signingConfigs {
+        oggur {
+            storeFile file('oggur.keystore')
+            storePassword 'oggurgrade'
+            keyAlias 'oggur'
+            keyPassword 'oggurgrade'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.oggur
+        }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.oggur
         }
     }
 
