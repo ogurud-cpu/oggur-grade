@@ -78,6 +78,16 @@
 
   .hint{font-size:11px;color:var(--ink-dim);margin:8px 0 0}
 
+  .rules{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .rule{display:flex;align-items:flex-start;gap:8px;background:#0F0D0C;border:1px solid var(--line);
+    border-left:2px solid var(--amber);border-radius:8px;padding:9px 10px;font-size:12px;line-height:1.45}
+  .rule p{margin:0;flex:1}
+  .rule button{padding:0;width:20px;height:20px;border:0;border-radius:50%;background:transparent;
+    color:var(--ink-dim);font-size:14px;line-height:1;flex:none}
+  .addRule{display:flex;gap:8px;margin-top:8px}
+  .addRule input{flex:1}
+  .addRule button{flex:none;width:auto}
+
   .styles{display:flex;flex-direction:column;gap:8px;margin-top:10px}
   .chip{text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:10px;
     padding:11px 12px;cursor:pointer;transition:border-color .15s,background .15s}
@@ -127,6 +137,17 @@
     <div class="row"><button id="analyze">Referanslardan stilleri çıkar</button></div>
     <div class="styles" id="styles"></div>
     <p class="hint" id="styleHint">Referansları ekledikten sonra bir kez çalıştır. Çıkan stiller kayıtlı kalır, her fotoğrafta birini seçersin.</p>
+  </section>
+
+  <!-- Rules -->
+  <section>
+    <p class="eyebrow"><span>Değişmez kurallar</span><span id="ruleCount">0</span></p>
+    <div class="rules" id="rules"></div>
+    <div class="addRule">
+      <input id="ruleInput" type="text" placeholder="ör. Yüzü asla değiştirme" autocomplete="off">
+      <button id="ruleAdd">Ekle</button>
+    </div>
+    <p class="hint">Buradaki kurallar her renderda talimatın sonuna eklenir ve sen silene kadar geçerli kalır.</p>
   </section>
 
   <!-- 3. Prompt -->
@@ -194,6 +215,7 @@ let srcFile = null;
 let refs = [];      // {d:dataUrl, done:bool}
 let styles = [];    // {name, desc}
 let styleIdx = -1;  // seçili stil
+let rules = [];     // string[]
 
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
@@ -204,9 +226,10 @@ try { refs = JSON.parse(store.get('pg.refs','[]')) } catch(e) { refs = [] }
 try { styles = JSON.parse(store.get('pg.styles','[]')) } catch(e) { styles = [] }
 // eski sürümden gelen düz dataUrl listesini yeni biçime çevir
 refs = refs.map(r => typeof r === 'string' ? { d:r, done: styles.length > 0 } : r);
+try { rules = JSON.parse(store.get('pg.rules','[]')) } catch(e) { rules = [] }
 styleIdx = parseInt(store.get('pg.styleIdx','-1'), 10);
 if (isNaN(styleIdx) || styleIdx >= styles.length) styleIdx = -1;
-renderRefs(); renderStyles(); updateKeyState(); updateGo();
+renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
 
 /* ---------- persist ---------- */
 $('prompt').oninput = () => store.set('pg.prompt', $('prompt').value);
@@ -281,6 +304,35 @@ function dataUrlToBlob(d){
   for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
   return new Blob([arr], {type: mime});
 }
+
+/* ---------- değişmez kurallar ---------- */
+function saveRules(){ store.set('pg.rules', JSON.stringify(rules)) }
+
+function renderRules(){
+  const box = $('rules'); box.innerHTML = '';
+  rules.forEach((txt, i) => {
+    const el = document.createElement('div'); el.className = 'rule';
+    const p = document.createElement('p'); p.textContent = txt;
+    const del = document.createElement('button');
+    del.textContent = '×'; del.setAttribute('aria-label', 'Kuralı sil');
+    del.onclick = () => { rules.splice(i,1); saveRules(); renderRules() };
+    el.appendChild(p); el.appendChild(del); box.appendChild(el);
+  });
+  $('ruleCount').textContent = rules.length;
+}
+
+function addRule(){
+  const v = $('ruleInput').value.trim();
+  if (!v) return;
+  if (rules.some(r => r.toLowerCase() === v.toLowerCase())) {
+    setStatus('Bu kural zaten var.', true); $('ruleInput').value = ''; return;
+  }
+  rules.push(v); saveRules(); renderRules();
+  $('ruleInput').value = '';
+  setStatus('Kural eklendi.');
+}
+$('ruleAdd').onclick = addRule;
+$('ruleInput').onkeydown = e => { if (e.key === 'Enter') addRule() };
 
 /* ---------- stil kütüphanesi ---------- */
 function saveStyles(){ store.set('pg.styles', JSON.stringify(styles)) }
@@ -402,6 +454,10 @@ $('go').onclick = async () => {
   let prompt = $('prompt').value;
   if (styleIdx >= 0 && styles[styleIdx]) {
     prompt += '\n\nApply this color grade: ' + styles[styleIdx].name + '. ' + styles[styleIdx].desc;
+  }
+  if (rules.length) {
+    prompt += '\n\nNON-NEGOTIABLE RULES — these override everything above and must be followed exactly:\n'
+            + rules.map((r,i) => (i+1) + '. ' + r).join('\n');
   }
   fd.append('prompt', prompt);
   fd.append('quality', $('quality').value);
