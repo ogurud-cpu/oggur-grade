@@ -62,9 +62,15 @@
   textarea{min-height:120px;font-family:ui-monospace,"Roboto Mono",monospace;font-size:12px;line-height:1.6}
   label{display:block;font-size:12px;color:var(--ink-dim);margin:10px 0 5px}
 
-  .go{width:100%;background:var(--safelight);border-color:var(--safelight);color:#fff;
-    font-weight:600;letter-spacing:.16em;text-transform:uppercase;font-size:12px;padding:16px}
+  .go{position:relative;overflow:hidden;width:100%;background:var(--safelight);
+    border-color:var(--safelight);color:#fff;font-weight:600;letter-spacing:.16em;
+    text-transform:uppercase;font-size:12px;padding:16px}
   .go:disabled{background:var(--panel-2);border-color:var(--line);color:var(--ink-dim)}
+  /* çalışırken: dolan şerit + sayaç */
+  .go.working{background:var(--panel-2);border-color:var(--safelight);color:var(--ink)}
+  .go .fill{position:absolute;inset:0;width:0;background:linear-gradient(90deg,
+    var(--safelight-dim), var(--safelight));opacity:.55;transition:width .45s linear}
+  .go .lbl{position:relative;z-index:1}
 
   .status{font-size:12px;color:var(--ink-dim);text-align:center;margin-top:10px;min-height:18px}
   .status.err{color:#E6685C}
@@ -199,7 +205,7 @@
     </details>
   </section>
 
-  <button class="go" id="go" disabled>Render et</button>
+  <button class="go" id="go" disabled><span class="fill" id="goFill"></span><span class="lbl" id="goLbl">Render et</span></button>
   <p class="status" id="status"></p>
 
   <section id="resultWrap" hidden>
@@ -463,6 +469,37 @@ $('analyze').onclick = async () => {
   }
 };
 
+/* ---------- render sayacı ---------- */
+let tick = null, t0 = 0;
+const EXPECT = 50; // beklenen saniye; şerit buna göre dolar
+
+function fmt(sec){
+  const m = Math.floor(sec/60), s2 = sec % 60;
+  return m ? m + ':' + String(s2).padStart(2,'0') : s2 + ' sn';
+}
+function startTimer(){
+  t0 = Date.now();
+  $('go').classList.add('working');
+  $('goFill').style.width = '0%';
+  const paint = () => {
+    const sec = Math.floor((Date.now() - t0) / 1000);
+    // %92'ye kadar doldur, kalanı sonuç gelince kapansın
+    const pct = Math.min(92, (sec / EXPECT) * 92);
+    $('goFill').style.width = pct.toFixed(1) + '%';
+    $('goLbl').textContent = 'Render ediliyor · ' + fmt(sec);
+  };
+  paint(); tick = setInterval(paint, 500);
+}
+function stopTimer(ok){
+  clearInterval(tick); tick = null;
+  const sec = Math.floor((Date.now() - t0) / 1000);
+  $('goFill').style.width = ok ? '100%' : '0%';
+  $('go').classList.remove('working');
+  $('goLbl').textContent = 'Render et';
+  setTimeout(() => { if (!tick) $('goFill').style.width = '0%' }, 600);
+  return sec;
+}
+
 /* ---------- render ---------- */
 function updateGo(){ $('go').disabled = !(srcFile && $('key').value.trim()) }
 function setStatus(t, err){ $('status').textContent = t; $('status').className = 'status' + (err?' err':'') }
@@ -473,7 +510,8 @@ $('go').onclick = async () => {
   if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
 
   $('go').disabled = true; $('lamp').className = 'lamp on';
-  setStatus('Render ediliyor… 30–60 sn sürebilir.');
+  startTimer();
+  setStatus('');
 
   const fd = new FormData();
   const model = $('model').value;
@@ -494,7 +532,7 @@ $('go').onclick = async () => {
   fd.append('quality', $('quality').value);
   if ($('size').value !== 'auto') fd.append('size', $('size').value);
   fd.append('image[]', srcFile, 'source.jpg');
-  refs.forEach((d,i) => fd.append('image[]', dataUrlToBlob(d), `ref${i}.jpg`));
+  refs.forEach((r,i) => fd.append('image[]', dataUrlToBlob(r.d), `ref${i}.jpg`));
 
   try {
     const r = await fetch('https://api.openai.com/v1/images/edits', {
@@ -506,11 +544,13 @@ $('go').onclick = async () => {
     if (!b64) throw new Error('Yanıt görsel içermiyor.');
     $('result').src = 'data:image/png;base64,' + b64;
     $('resultWrap').hidden = false;
-    setStatus('Hazır.');
+    setStatus('Hazır · ' + fmt(stopTimer(true)));
     $('resultWrap').scrollIntoView({behavior:'smooth', block:'start'});
   } catch (err) {
+    stopTimer(false);
     setStatus(err.message, true);
   } finally {
+    if (tick) stopTimer(false);
     $('go').disabled = false; $('lamp').className = 'lamp'; updateGo();
   }
 };
