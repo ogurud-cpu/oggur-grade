@@ -170,8 +170,10 @@
       <input type="password" id="key" placeholder="sk-..." autocomplete="off">
       <label for="model">Model</label>
     <select id="model" style="width:100%;background:#0F0D0C;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px;font:inherit;font-size:13px">
-      <option value="gpt-image-1.5">gpt-image-1.5 — yüz koruma daha iyi</option>
-      <option value="gpt-image-1">gpt-image-1 — eski, daha ucuz</option>
+      <option value="gpt-image-2">gpt-image-2 — en yeni, yüz koruma en iyi</option>
+      <option value="gpt-image-1.5">gpt-image-1.5 — bir önceki, daha ucuz</option>
+      <option value="gpt-image-1-mini">gpt-image-1-mini — en ucuz, deneme için</option>
+      <option value="gpt-image-1">gpt-image-1 — eski nesil</option>
     </select>
 
     <label for="fidelity">Kaynağa sadakat</label>
@@ -232,7 +234,7 @@ let rules = [];     // string[]
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
 $('key').value = store.get('pg.key', '');
-$('model').value = store.get('pg.model', 'gpt-image-1.5');
+$('model').value = store.get('pg.model', 'gpt-image-2');
 $('fidelity').value = store.get('pg.fidelity', 'high');
 $('size').value = store.get('pg.size', 'auto');
 $('quality').value = store.get('pg.quality', 'high');
@@ -248,7 +250,15 @@ renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
 /* ---------- persist ---------- */
 $('prompt').oninput = () => store.set('pg.prompt', $('prompt').value);
 $('key').oninput = () => { store.set('pg.key', $('key').value); updateKeyState(); updateGo() };
-$('model').onchange = () => store.set('pg.model', $('model').value);
+$('model').onchange = () => { store.set('pg.model', $('model').value); syncFidelity() };
+function syncFidelity(){
+  const legacy = $('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1-mini';
+  $('fidelity').disabled = !legacy;
+  $('fidelity').previousElementSibling.textContent = legacy
+    ? 'Kaynağa sadakat'
+    : 'Kaynağa sadakat — bu modelde hep yüksek';
+}
+syncFidelity();
 $('fidelity').onchange = () => store.set('pg.fidelity', $('fidelity').value);
 $('size').onchange = () => store.set('pg.size', $('size').value);
 $('quality').onchange = () => store.set('pg.quality', $('quality').value);
@@ -468,7 +478,10 @@ $('go').onclick = async () => {
   const fd = new FormData();
   const model = $('model').value;
   fd.append('model', model);
-  fd.append('input_fidelity', $('fidelity').value);
+  // input_fidelity yalnızca eski modellerde geçerli; yenilerde zaten hep yüksek
+  if (model === 'gpt-image-1' || model === 'gpt-image-1-mini') {
+    fd.append('input_fidelity', $('fidelity').value);
+  }
   let prompt = $('prompt').value;
   if (styleIdx >= 0 && styles[styleIdx]) {
     prompt += '\n\nApply this color grade: ' + styles[styleIdx].name + '. ' + styles[styleIdx].desc;
