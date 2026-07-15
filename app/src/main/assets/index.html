@@ -77,6 +77,17 @@
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
   .hint{font-size:11px;color:var(--ink-dim);margin:8px 0 0}
+
+  .styles{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  .chip{text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:10px;
+    padding:11px 12px;cursor:pointer;transition:border-color .15s,background .15s}
+  .chip[aria-pressed="true"]{border-color:var(--amber);background:rgba(217,164,65,.07)}
+  .chip{position:relative;padding-right:34px}
+  .chip b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}
+  .chipDel{position:absolute;top:8px;right:8px;width:22px;height:22px;padding:0;border:0;
+    border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
+  .chip span{font-size:11px;color:var(--ink-dim);line-height:1.45}
+  .chip[aria-pressed="true"] b{color:var(--amber)}
   .link{color:var(--amber);text-decoration:none}
   details summary{cursor:pointer;list-style:none}
   details summary::-webkit-details-marker{display:none}
@@ -107,7 +118,15 @@
     <div class="row"><button id="pickRef">Referans ekle</button></div>
     <input type="file" id="refInput" accept="image/*" multiple hidden>
     <div class="refs" id="refs"></div>
-    <p class="hint">Referanslar cihazda kalır, her istekte otomatik gönderilir. En fazla 4 tane kullan.</p>
+    <p class="hint">Referanslar cihazda kalır. En fazla 4 tane kullan.</p>
+  </section>
+
+  <!-- Style library -->
+  <section>
+    <p class="eyebrow"><span>Stil kütüphanesi</span><span id="styleCount">0</span></p>
+    <div class="row"><button id="analyze">Referanslardan stilleri çıkar</button></div>
+    <div class="styles" id="styles"></div>
+    <p class="hint" id="styleHint">Referansları ekledikten sonra bir kez çalıştır. Çıkan stiller kayıtlı kalır, her fotoğrafta birini seçersin.</p>
   </section>
 
   <!-- 3. Prompt -->
@@ -172,7 +191,9 @@ const store = {
 };
 
 let srcFile = null;
-let refs = []; // {dataUrl}
+let refs = [];      // {d:dataUrl, done:bool}
+let styles = [];    // {name, desc}
+let styleIdx = -1;  // seçili stil
 
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
@@ -180,7 +201,12 @@ $('key').value = store.get('pg.key', '');
 $('size').value = store.get('pg.size', 'auto');
 $('quality').value = store.get('pg.quality', 'high');
 try { refs = JSON.parse(store.get('pg.refs','[]')) } catch(e) { refs = [] }
-renderRefs(); updateKeyState(); updateGo();
+try { styles = JSON.parse(store.get('pg.styles','[]')) } catch(e) { styles = [] }
+// eski sürümden gelen düz dataUrl listesini yeni biçime çevir
+refs = refs.map(r => typeof r === 'string' ? { d:r, done: styles.length > 0 } : r);
+styleIdx = parseInt(store.get('pg.styleIdx','-1'), 10);
+if (isNaN(styleIdx) || styleIdx >= styles.length) styleIdx = -1;
+renderRefs(); renderStyles(); updateKeyState(); updateGo();
 
 /* ---------- persist ---------- */
 $('prompt').oninput = () => store.set('pg.prompt', $('prompt').value);
@@ -216,16 +242,17 @@ $('pickRef').onclick = () => $('refInput').click();
 $('refInput').onchange = async e => {
   for (const f of e.target.files) {
     if (refs.length >= 4) { setStatus('En fazla 4 referans kullanılabilir.', true); break }
-    refs.push(await downscale(f, 768));
+    refs.push({ d: await downscale(f, 768), done: false });
   }
   saveRefs(); renderRefs(); $('refInput').value = '';
 };
 function saveRefs(){ store.set('pg.refs', JSON.stringify(refs)) }
 function renderRefs(){
   $('refs').innerHTML = '';
-  refs.forEach((d, i) => {
+  refs.forEach((r, i) => {
     const el = document.createElement('div'); el.className = 'ref';
-    el.innerHTML = `<img src="${d}" alt="Referans ${i+1}"><button aria-label="Referans ${i+1} sil">×</button>`;
+    el.innerHTML = `<img src="${r.d}" alt="Referans ${i+1}"><button aria-label="Referans ${i+1} sil">×</button>`;
+    if (!r.done) el.style.borderColor = 'var(--amber)';
     el.querySelector('button').onclick = () => { refs.splice(i,1); saveRefs(); renderRefs() };
     $('refs').appendChild(el);
   });
@@ -255,6 +282,109 @@ function dataUrlToBlob(d){
   return new Blob([arr], {type: mime});
 }
 
+/* ---------- stil kütüphanesi ---------- */
+function saveStyles(){ store.set('pg.styles', JSON.stringify(styles)) }
+
+function renderStyles(){
+  const box = $('styles'); box.innerHTML = '';
+  styles.forEach((st, i) => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.setAttribute('aria-pressed', String(i === styleIdx));
+    b.innerHTML = '<b></b><span></span>';
+    b.querySelector('b').textContent = st.name;
+    b.querySelector('span').textContent = st.desc;
+    b.onclick = () => {
+      styleIdx = (styleIdx === i) ? -1 : i;
+      store.set('pg.styleIdx', String(styleIdx));
+      renderStyles();
+    };
+    const del = document.createElement('button');
+    del.className = 'chipDel'; del.textContent = '×';
+    del.setAttribute('aria-label', st.name + ' stilini sil');
+    del.onclick = ev => {
+      ev.stopPropagation();
+      styles.splice(i, 1);
+      if (styleIdx === i) styleIdx = -1;
+      else if (styleIdx > i) styleIdx--;
+      store.set('pg.styleIdx', String(styleIdx));
+      saveStyles(); renderStyles();
+    };
+    b.appendChild(del);
+    box.appendChild(b);
+  });
+  $('styleCount').textContent = styles.length;
+
+  const fresh = refs.filter(r => !r.done).length;
+  $('analyze').textContent = fresh
+    ? (fresh + ' yeni referanstan stil ekle')
+    : (styles.length ? 'Tüm referansları yeniden analiz et' : 'Referanslardan stilleri çıkar');
+
+  $('styleHint').textContent = !styles.length
+    ? 'Referansları ekledikten sonra bir kez çalıştır. Çıkan stiller kayıtlı kalır.'
+    : fresh
+      ? 'Sarı çerçeveli ' + fresh + ' referans henüz analiz edilmedi. Çıkan stiller mevcutların üstüne eklenir, hiçbiri silinmez.'
+      : (styleIdx >= 0 ? 'Seçili: ' + styles[styleIdx].name + ' — tekrar dokunursan seçim kalkar.'
+                       : 'Bir stil seç, yoksa yalnızca ana talimat uygulanır.');
+}
+
+$('analyze').onclick = async () => {
+  const key = $('key').value.trim();
+  if (!refs.length) return setStatus('Önce referans görsel ekle.', true);
+  if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
+
+  // Yeni referans varsa sadece onları, yoksa hepsini analiz et
+  let batch = refs.filter(r => !r.done);
+  if (!batch.length) batch = refs.slice();
+
+  $('analyze').disabled = true; $('lamp').className = 'lamp on';
+  setStatus(batch.length + ' referans analiz ediliyor…');
+
+  const content = [{ type:'text', text:
+    'Bu görseller bir fotoğrafçının renk stillerini gösteriyor. Renk dilini analiz et ve ' +
+    '5 ila 6 ayrı stil çıkar. Her stil için: kısa Türkçe bir ad, ve bir görsel üretim modeline ' +
+    'verilecek İngilizce teknik tarif (renk sıcaklığı, tonlama, kontrast, highlight/shadow ' +
+    'davranışı, doygunluk, film/lens karakteri). Tarifler kompozisyon veya konu içermesin, ' +
+    'yalnızca renk ve ışık. SADECE şu formatta JSON dizisi döndür, başka hiçbir şey yazma: ' +
+    '[{"name":"...","desc":"..."}]' }];
+  if (styles.length) {
+    content[0].text += ' Kütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
+      + styles.map(x => x.name).join(', ') + '.';
+  }
+  batch.forEach(r => content.push({ type:'image_url', image_url:{ url:r.d } }));
+
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
+      body: JSON.stringify({ model:'gpt-4o', max_tokens:1500, messages:[{ role:'user', content }] })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.error?.message || ('HTTP ' + r.status));
+    let txt = (data?.choices?.[0]?.message?.content || '').trim();
+    txt = txt.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+    const arr = JSON.parse(txt);
+    if (!Array.isArray(arr) || !arr.length) throw new Error('Stil listesi okunamadı.');
+    const have = styles.map(x => x.name.toLowerCase().trim());
+    const fresh = arr
+      .filter(x => x && x.name && x.desc)
+      .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim() }))
+      .filter(x => !have.includes(x.name.toLowerCase()));
+
+    styles = styles.concat(fresh);          // eskiler korunur, üstüne eklenir
+    batch.forEach(r => r.done = true);
+    saveRefs(); saveStyles(); renderRefs(); renderStyles();
+
+    setStatus(fresh.length
+      ? fresh.length + ' yeni stil eklendi. Kütüphanede toplam ' + styles.length + '.'
+      : 'Yeni stil çıkmadı, kütüphane aynı kaldı.');
+  } catch (err) {
+    setStatus('Analiz başarısız: ' + err.message, true);
+  } finally {
+    $('analyze').disabled = false; $('lamp').className = 'lamp';
+  }
+};
+
 /* ---------- render ---------- */
 function updateGo(){ $('go').disabled = !(srcFile && $('key').value.trim()) }
 function setStatus(t, err){ $('status').textContent = t; $('status').className = 'status' + (err?' err':'') }
@@ -269,7 +399,11 @@ $('go').onclick = async () => {
 
   const fd = new FormData();
   fd.append('model', 'gpt-image-1');
-  fd.append('prompt', $('prompt').value);
+  let prompt = $('prompt').value;
+  if (styleIdx >= 0 && styles[styleIdx]) {
+    prompt += '\n\nApply this color grade: ' + styles[styleIdx].name + '. ' + styles[styleIdx].desc;
+  }
+  fd.append('prompt', prompt);
   fd.append('quality', $('quality').value);
   if ($('size').value !== 'auto') fd.append('size', $('size').value);
   fd.append('image[]', srcFile, 'source.jpg');
