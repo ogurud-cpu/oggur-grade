@@ -168,7 +168,19 @@
       <summary class="eyebrow"><span>Bağlantı</span><span class="link" id="keyState">anahtar yok</span></summary>
       <label for="key">OpenAI API anahtarı</label>
       <input type="password" id="key" placeholder="sk-..." autocomplete="off">
-      <label for="size">Çıktı oranı</label>
+      <label for="model">Model</label>
+    <select id="model" style="width:100%;background:#0F0D0C;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px;font:inherit;font-size:13px">
+      <option value="gpt-image-1.5">gpt-image-1.5 — yüz koruma daha iyi</option>
+      <option value="gpt-image-1">gpt-image-1 — eski, daha ucuz</option>
+    </select>
+
+    <label for="fidelity">Kaynağa sadakat</label>
+    <select id="fidelity" style="width:100%;background:#0F0D0C;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px;font:inherit;font-size:13px">
+      <option value="high">Yüksek — yüz birebire yakın (pahalı)</option>
+      <option value="low">Düşük — modele serbestlik (ucuz)</option>
+    </select>
+
+    <label for="size">Çıktı oranı</label>
       <select id="size" style="width:100%;background:#0F0D0C;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px;font:inherit;font-size:13px">
         <option value="auto">Otomatik</option>
         <option value="1024x1536">Dikey 2:3</option>
@@ -220,6 +232,8 @@ let rules = [];     // string[]
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
 $('key').value = store.get('pg.key', '');
+$('model').value = store.get('pg.model', 'gpt-image-1.5');
+$('fidelity').value = store.get('pg.fidelity', 'high');
 $('size').value = store.get('pg.size', 'auto');
 $('quality').value = store.get('pg.quality', 'high');
 try { refs = JSON.parse(store.get('pg.refs','[]')) } catch(e) { refs = [] }
@@ -234,6 +248,8 @@ renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
 /* ---------- persist ---------- */
 $('prompt').oninput = () => store.set('pg.prompt', $('prompt').value);
 $('key').oninput = () => { store.set('pg.key', $('key').value); updateKeyState(); updateGo() };
+$('model').onchange = () => store.set('pg.model', $('model').value);
+$('fidelity').onchange = () => store.set('pg.fidelity', $('fidelity').value);
 $('size').onchange = () => store.set('pg.size', $('size').value);
 $('quality').onchange = () => store.set('pg.quality', $('quality').value);
 $('resetPrompt').onclick = () => { $('prompt').value = DEFAULT_PROMPT; store.set('pg.prompt', DEFAULT_PROMPT); setStatus('Talimat varsayılana döndü.') };
@@ -450,7 +466,9 @@ $('go').onclick = async () => {
   setStatus('Render ediliyor… 30–60 sn sürebilir.');
 
   const fd = new FormData();
-  fd.append('model', 'gpt-image-1');
+  const model = $('model').value;
+  fd.append('model', model);
+  fd.append('input_fidelity', $('fidelity').value);
   let prompt = $('prompt').value;
   if (styleIdx >= 0 && styles[styleIdx]) {
     prompt += '\n\nApply this color grade: ' + styles[styleIdx].name + '. ' + styles[styleIdx].desc;
