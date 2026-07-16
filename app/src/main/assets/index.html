@@ -174,7 +174,14 @@
       <summary class="eyebrow"><span>Bağlantı</span><span class="link" id="keyState">anahtar yok</span></summary>
       <label for="key">OpenAI API anahtarı</label>
       <input type="password" id="key" placeholder="sk-..." autocomplete="off">
-      <label for="model">Model</label>
+      <label for="vision">Analiz modeli (stil çıkarma)</label>
+    <select id="vision" style="width:100%;background:#0F0D0C;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px;font:inherit;font-size:13px">
+      <option value="gpt-5.6">gpt-5.6 Sol — en isabetli analiz</option>
+      <option value="gpt-5.6-terra">gpt-5.6 Terra — dengeli</option>
+      <option value="gpt-5.6-luna">gpt-5.6 Luna — en ucuz</option>
+    </select>
+
+    <label for="model">Render modeli</label>
     <select id="model" style="width:100%;background:#0F0D0C;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px;font:inherit;font-size:13px">
       <option value="gpt-image-2">gpt-image-2 — en yeni, yüz koruma en iyi</option>
       <option value="gpt-image-1.5">gpt-image-1.5 — bir önceki, daha ucuz</option>
@@ -240,6 +247,7 @@ let rules = [];     // string[]
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
 $('key').value = store.get('pg.key', '');
+$('vision').value = store.get('pg.vision', 'gpt-5.6');
 $('model').value = store.get('pg.model', 'gpt-image-2');
 $('fidelity').value = store.get('pg.fidelity', 'high');
 $('size').value = store.get('pg.size', 'auto');
@@ -256,6 +264,7 @@ renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
 /* ---------- persist ---------- */
 $('prompt').oninput = () => store.set('pg.prompt', $('prompt').value);
 $('key').oninput = () => { store.set('pg.key', $('key').value); updateKeyState(); updateGo() };
+$('vision').onchange = () => store.set('pg.vision', $('vision').value);
 $('model').onchange = () => { store.set('pg.model', $('model').value); syncFidelity() };
 function syncFidelity(){
   const legacy = $('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1-mini';
@@ -297,7 +306,7 @@ $('pickRef').onclick = () => $('refInput').click();
 $('refInput').onchange = async e => {
   for (const f of e.target.files) {
     if (refs.length >= 4) { setStatus('En fazla 4 referans kullanılabilir.', true); break }
-    refs.push({ d: await downscale(f, 768), done: false });
+    refs.push({ d: await downscale(f, 1400), done: false });
   }
   saveRefs(); renderRefs(); $('refInput').value = '';
 };
@@ -425,23 +434,29 @@ $('analyze').onclick = async () => {
   setStatus(batch.length + ' referans analiz ediliyor…');
 
   const content = [{ type:'text', text:
-    'Bu görseller bir fotoğrafçının renk stillerini gösteriyor. Renk dilini analiz et ve ' +
-    '5 ila 6 ayrı stil çıkar. Her stil için: kısa Türkçe bir ad, ve bir görsel üretim modeline ' +
-    'verilecek İngilizce teknik tarif (renk sıcaklığı, tonlama, kontrast, highlight/shadow ' +
-    'davranışı, doygunluk, film/lens karakteri). Tarifler kompozisyon veya konu içermesin, ' +
-    'yalnızca renk ve ışık. SADECE şu formatta JSON dizisi döndür, başka hiçbir şey yazma: ' +
-    '[{"name":"...","desc":"..."}]' }];
+    'Sen bir renk uzmanı kolorist gibi çalış. Aşağıdaki görseller bir fotoğrafçının işlerini gösteriyor. ' +
+    'Bunlar Instagram grid ekran görüntüsü olabilir: arayüzü, butonları, beyaz alanları, yazıları ve ' +
+    'profil öğelerini TAMAMEN yok say — sadece ızgaradaki fotoğraf karelerine bak. ' +
+    'Kareleri renk karakterine göre grupla ve birbirinden AÇIKÇA AYRI 5-6 stil çıkar. ' +
+    'Birbirine benzeyen genel tarifler yazma; her stil ölçülebilir biçimde farklı olsun.\n\n' +
+    'Her stil için şunları ver:\n' +
+    '- name: kısa, akılda kalıcı Türkçe ad\n' +
+    '- desc: bir görsel üretim modeline verilecek İngilizce teknik tarif. Şunları SOMUT belirt: ' +
+    'beyaz dengesi/renk sıcaklığı yönü, gölgelerdeki renk kayması, highlight tonu, kontrast eğrisi ' +
+    '(lifted/crushed blacks), doygunluk ve hangi renklerin bastırıldığı, cilt tonu davranışı, ' +
+    'grain/halation/film karakteri. Kompozisyon, konu, poz veya kadraj YAZMA — yalnızca renk ve ışık.\n\n' +
+    'SADECE şu biçimde JSON dizisi döndür, başka hiçbir şey yazma: [{"name":"...","desc":"..."}]' }];
   if (styles.length) {
     content[0].text += ' Kütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
       + styles.map(x => x.name).join(', ') + '.';
   }
-  batch.forEach(r => content.push({ type:'image_url', image_url:{ url:r.d } }));
+  batch.forEach(r => content.push({ type:'image_url', image_url:{ url:r.d, detail:'original' } }));
 
   try {
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method:'POST',
       headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
-      body: JSON.stringify({ model:'gpt-4o', max_tokens:1500, messages:[{ role:'user', content }] })
+      body: JSON.stringify({ model: $('vision').value, messages:[{ role:'user', content }] })
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data?.error?.message || ('HTTP ' + r.status));
