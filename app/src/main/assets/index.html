@@ -264,11 +264,14 @@ Keep the person's face exactly identical to the reference photo. Preserve identi
 
 The first image is the photo to be graded. The following images are color reference frames — match their color science, tonality and light quality. Do not copy their content or subjects.`;
 
-const DEFAULT_ANALYZE = `Referans verdiğim görseldeki kişi fotoğraflara presets renk oluşturuyor. Ve ortaya harika görseller çıkıyor. Senden istediğim lütfen bu sayfayı incele, benim sana vereceğim fotoğraflara senin bu kişinin renk stillerini yapmanı istiyorum. Keep the face exactly the same as the original photo.
+const DEFAULT_ANALYZE = `Referans verdiğim görsellerdeki fotoğrafçı, fotoğraflarına kendi preset renk düzenlemelerini uyguluyor ve ortaya tanınabilir bir renk imzası çıkıyor. Senden istediğim: bu renk dilini bir kolorist gibi çöz, sonra benim vereceğim fotoğraflara aynı stilleri uygulayabilmem için tarifleri çıkar. Keep the face exactly the same as the original photo.
 
-Bu görseller Instagram grid ekran görüntüsü olabilir: arayüzü, butonları, yazıları, beyaz alanları ve profil öğelerini tamamen yok say — sadece ızgaradaki fotoğraf karelerine bak.
+Referanslar iki biçimde gelebilir; hangisi olduğunu sen anla:
+- Tekli fotoğraf: tek bir düzenlenmiş kare. Genelde bir preseti temsil eder.
+- Izgara / ekran görüntüsü: içinde onlarca küçük kare olan bir galeri veya profil görüntüsü. Bu durumda arayüzü, butonları, yazıları, beyaz alanları ve profil öğelerini tamamen yok say; sadece fotoğraf karelerine bak ve kareleri renk karakterine göre grupla.
+İkisi karışık gelebilir; her görseli kendi biçimine göre değerlendir.
 
-Kareleri renk karakterine göre grupla ve bu kişinin birbirinden açıkça ayrı presetlerini çıkar. Kaç ayrı preset gördüğüne sen karar ver — sayıya tamamlamak için uydurma, sıkıştırmak için de birleştirme. En fazla 10 stil.
+Kaç ayrı preset gördüğüne sen karar ver. Sayıya tamamlamak için uydurma, sıkıştırmak için de birleştirme. Gerçekten aynı renk karakterindeki kareleri tek stilde topla; açıkça ayrı olanları ayrı bırak.
 
 Her stil için:
 - name: kısa, akılda kalıcı Türkçe ad
@@ -441,6 +444,9 @@ function applyGrade(img, g, size){
   const sh   = g.shadowTint || [0,0,0];    // -100..100
   const hi   = g.highlightTint || [0,0,0];
 
+  // etki katsayıları: gerçek grade hissi için belirgin olmalı
+  const K_TEMP = 0.38, K_TINT = 0.26, K_LIFT = 0.42, K_SPLIT = 0.42;
+
   for (let i = 0; i < p.length; i += 4) {
     let r = p[i] / 255, gr = p[i+1] / 255, b = p[i+2] / 255;
 
@@ -448,21 +454,21 @@ function applyGrade(img, g, size){
     if (expo) { r += expo; gr += expo; b += expo; }
 
     // ısı / tint
-    r += temp * 0.12; b -= temp * 0.12;
-    gr -= tint * 0.08; r += tint * 0.04; b += tint * 0.04;
+    r += temp * K_TEMP; b -= temp * K_TEMP;
+    gr -= tint * K_TINT; r += tint * K_TINT * 0.5; b += tint * K_TINT * 0.5;
 
     // kontrast (0.5 merkezli)
     if (con) { const k = 1 + con; r = (r-0.5)*k+0.5; gr = (gr-0.5)*k+0.5; b = (b-0.5)*k+0.5; }
 
     // lifted blacks
-    if (lift) { const l = lift * 0.25; r = l + r*(1-l); gr = l + gr*(1-l); b = l + b*(1-l); }
+    if (lift) { const l = lift * K_LIFT; r = l + r*(1-l); gr = l + gr*(1-l); b = l + b*(1-l); }
 
     // gölge / highlight renk kayması, parlaklığa göre ağırlıklı
     const lum = 0.2126*r + 0.7152*gr + 0.0722*b;
-    const ws = clamp(1 - lum*1.6, 0, 1), wh = clamp((lum-0.4)*1.6, 0, 1);
-    r += (sh[0]/100)*0.16*ws + (hi[0]/100)*0.16*wh;
-    gr += (sh[1]/100)*0.16*ws + (hi[1]/100)*0.16*wh;
-    b += (sh[2]/100)*0.16*ws + (hi[2]/100)*0.16*wh;
+    const ws = clamp(1 - lum*1.5, 0, 1), wh = clamp((lum-0.35)*1.5, 0, 1);
+    r += (sh[0]/100)*K_SPLIT*ws + (hi[0]/100)*K_SPLIT*wh;
+    gr += (sh[1]/100)*K_SPLIT*ws + (hi[1]/100)*K_SPLIT*wh;
+    b += (sh[2]/100)*K_SPLIT*ws + (hi[2]/100)*K_SPLIT*wh;
 
     // doygunluk
     if (sat !== 1) {
