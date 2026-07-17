@@ -83,6 +83,8 @@
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
   .hint{font-size:11px;color:var(--ink-dim);margin:8px 0 0}
+  .sw{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12px;color:var(--ink)}
+  .sw input{width:auto;flex:none;accent-color:var(--safelight);width:18px;height:18px}
 
   .rules{display:flex;flex-direction:column;gap:6px;margin-top:10px}
   .rule{display:flex;align-items:flex-start;gap:8px;background:#0F0D0C;border:1px solid var(--line);
@@ -134,7 +136,8 @@
     <div class="row"><button id="pickRef">Referans ekle</button></div>
     <input type="file" id="refInput" accept="image/*" multiple hidden>
     <div class="refs" id="refs"></div>
-    <p class="hint">Referanslar cihazda kalır. En fazla 4 tane kullan.</p>
+    <label class="sw"><input type="checkbox" id="sendRefs"> Referansları her renderda da gönder</label>
+    <p class="hint">Kapalıyken referanslar yalnızca stil çıkarmak için kullanılır — render ucuzlar ve hızlanır. Stil metni görünümü zaten taşır.</p>
   </section>
 
   <!-- Style library -->
@@ -247,6 +250,8 @@ let rules = [];     // string[]
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
 $('key').value = store.get('pg.key', '');
+$('sendRefs').checked = store.get('pg.sendRefs','0') === '1';
+$('sendRefs').onchange = () => store.set('pg.sendRefs', $('sendRefs').checked ? '1' : '0');
 $('vision').value = store.get('pg.vision', 'gpt-5.6');
 $('model').value = store.get('pg.model', 'gpt-image-2');
 $('fidelity').value = store.get('pg.fidelity', 'high');
@@ -338,6 +343,23 @@ function downscale(file, max){
     img.src = URL.createObjectURL(file);
   });
 }
+/* kaynağı göndermeden önce küçült — ham telefon fotoğrafı isteği düşürüyor */
+function shrinkToBlob(file, max){
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const s2 = Math.min(1, max / Math.max(img.width, img.height));
+      if (s2 === 1 && file.size < 3 * 1048576) return res(file); // zaten küçükse dokunma
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * s2); c.height = Math.round(img.height * s2);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b => b ? res(b) : rej(new Error('Fotoğraf hazırlanamadı')), 'image/jpeg', 0.92);
+    };
+    img.onerror = () => rej(new Error('Fotoğraf okunamadı'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 function dataUrlToBlob(d){
   const [head, b64] = d.split(',');
   const mime = head.match(/:(.*?);/)[1];
@@ -493,6 +515,7 @@ function fmt(sec){
   return m ? m + ':' + String(s2).padStart(2,'0') : s2 + ' sn';
 }
 function startTimer(){
+  try { if (window.Android && window.Android.keepAwake) window.Android.keepAwake(true) } catch(e){}
   t0 = Date.now();
   $('go').classList.add('working');
   $('goFill').style.width = '0%';
@@ -506,6 +529,7 @@ function startTimer(){
   paint(); tick = setInterval(paint, 500);
 }
 function stopTimer(ok){
+  try { if (window.Android && window.Android.keepAwake) window.Android.keepAwake(false) } catch(e){}
   clearInterval(tick); tick = null;
   const sec = Math.floor((Date.now() - t0) / 1000);
   $('goFill').style.width = ok ? '100%' : '0%';
@@ -546,8 +570,11 @@ $('go').onclick = async () => {
   fd.append('prompt', prompt);
   fd.append('quality', $('quality').value);
   if ($('size').value !== 'auto') fd.append('size', $('size').value);
-  fd.append('image[]', srcFile, 'source.jpg');
-  refs.forEach((r,i) => fd.append('image[]', dataUrlToBlob(r.d), `ref${i}.jpg`));
+  const srcBlob = await shrinkToBlob(srcFile, 2048);
+  fd.append('image[]', srcBlob, 'source.jpg');
+  if ($('sendRefs').checked) {
+    refs.forEach((r,i) => fd.append('image[]', dataUrlToBlob(r.d), `ref${i}.jpg`));
+  }
 
   try {
     const r = await fetch('https://api.openai.com/v1/images/edits', {
@@ -563,12 +590,22 @@ $('go').onclick = async () => {
     $('resultWrap').scrollIntoView({behavior:'smooth', block:'start'});
   } catch (err) {
     stopTimer(false);
-    setStatus(err.message, true);
+    const m = /failed to fetch|network/i.test(err.message)
+      ? 'Bağlantı koptu. Fotoğraf çok büyük olabilir ya da uygulamadan çıkıldı. Referansları kapatıp tekrar dene.'
+      : err.message;
+    setStatus(m, true);
   } finally {
     if (tick) stopTimer(false);
     $('go').disabled = false; $('lamp').className = 'lamp'; updateGo();
   }
 };
+
+/* ---------- arka plan uyarısı ---------- */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && tick) {
+    setStatus('Uygulamadan çıkma — render iptal olabilir.', true);
+  }
+});
 
 /* ---------- save / share ---------- */
 $('save').onclick = () => {
