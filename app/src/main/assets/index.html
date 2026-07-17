@@ -312,7 +312,7 @@ $('key').oninput = () => { store.set('pg.key', $('key').value); updateKeyState()
 $('vision').onchange = () => store.set('pg.vision', $('vision').value);
 $('model').onchange = () => { store.set('pg.model', $('model').value); syncFidelity() };
 function syncFidelity(){
-  const legacy = $('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1-mini';
+  const legacy = $('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1.5';
   $('fidelity').disabled = !legacy;
   $('fidelity').previousElementSibling.textContent = legacy
     ? 'Kaynağa sadakat'
@@ -801,8 +801,11 @@ $('go').onclick = async () => {
 
     const tool = { type:'image_generation', model: $('model').value, quality: $('quality').value };
     if ($('size').value !== 'auto') tool.size = $('size').value;
-    // Responses API'de bu varsayılan olarak "low" — yüz koruma için açıkça yükseltiyoruz
-    if ($('model').value !== 'gpt-image-1-mini') tool.input_fidelity = 'high';
+    // input_fidelity yalnızca gpt-image-1 ve 1.5'te geçerli; bu uçta varsayılanı "low"
+    // olduğu için açıkça yükseltiyoruz. gpt-image-2 parametreyi reddeder — zaten hep yüksek.
+    if ($('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1.5') {
+      tool.input_fidelity = $('fidelity').value;
+    }
 
     const r = await fetch('https://api.openai.com/v1/responses', {
       method:'POST',
