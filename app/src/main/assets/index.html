@@ -251,6 +251,7 @@ let refs = [];      // {d:dataUrl, done:bool}
 let styles = [];    // {name, desc}
 let styleIdx = -1;  // seçili stil
 let rules = [];     // string[]
+const openStyles = new Set(); // detayı açık stiller
 
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
@@ -404,7 +405,6 @@ $('ruleInput').onkeydown = e => { if (e.key === 'Enter') addRule() };
 
 /* ---------- stil kütüphanesi ---------- */
 function saveStyles(){ store.set('pg.styles', JSON.stringify(styles)) }
-const open = new Set(); // hangi stillerin detayı açık
 
 function renderStyles(){
   const box = $('styles'); box.innerHTML = '';
@@ -415,7 +415,7 @@ function renderStyles(){
     b.innerHTML = '<b></b><span></span>';
     b.querySelector('b').textContent = st.name;
     b.querySelector('span').textContent = st.desc;
-    if (open.has(i)) b.classList.add('open');
+    if (openStyles.has(i)) b.classList.add('open');
     b.onclick = () => {
       styleIdx = (styleIdx === i) ? -1 : i;
       store.set('pg.styleIdx', String(styleIdx));
@@ -426,9 +426,9 @@ function renderStyles(){
     info.setAttribute('aria-label', st.name + ' detayını aç/kapat');
     info.onclick = ev => {
       ev.stopPropagation();
-      if (open.has(i)) open.delete(i); else open.add(i);
+      if (openStyles.has(i)) openStyles.delete(i); else openStyles.add(i);
       b.classList.toggle('open');
-      info.setAttribute('aria-expanded', String(open.has(i)));
+      info.setAttribute('aria-expanded', String(openStyles.has(i)));
     };
     b.appendChild(info);
 
@@ -438,7 +438,7 @@ function renderStyles(){
     del.onclick = ev => {
       ev.stopPropagation();
       styles.splice(i, 1);
-      open.clear();
+      openStyles.clear();
       if (styleIdx === i) styleIdx = -1;
       else if (styleIdx > i) styleIdx--;
       store.set('pg.styleIdx', String(styleIdx));
