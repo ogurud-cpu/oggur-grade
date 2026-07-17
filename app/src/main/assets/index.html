@@ -915,6 +915,20 @@ $('save').onclick = () => {
   a.download = 'oggur-' + Date.now() + '.png';
   a.click();
 };
+$('clearResult').onclick = () => {
+  $('resultWrap').hidden = true;
+  $('result').src = '';
+  setStatus('');
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }) } catch(e) {}
+};
+
+/* Arka plan uyarısı: iş sunucuda sürer ama kullanıcı bilsin */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && polling) {
+    setStatus('İş arka planda sürüyor, geri döndüğünde sonucu alırım.');
+  }
+});
+
 $('share').onclick = async () => {
   try {
     const blob = await (await fetch($('result').src)).blob();
