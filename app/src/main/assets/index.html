@@ -38,6 +38,10 @@
     padding:14px;margin-bottom:12px}
   .eyebrow{font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-dim);
     margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
+  /* summary'ye flex vermek bazı WebView'larda aç/kapat'ı bozar: satır içi sarmalayıcı kullan */
+  summary.eyebrow{display:list-item;list-style:none;cursor:pointer;padding:2px 0}
+  summary.eyebrow::-webkit-details-marker{display:none}
+  summary.eyebrow>.sumRow{display:flex;justify-content:space-between;align-items:center;width:100%}
 
   button{font:inherit;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);
     border-radius:10px;padding:11px 14px;cursor:pointer}
@@ -97,15 +101,6 @@
   .addRule button{flex:none;width:auto}
 
   .styles{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-  .cat{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0F0D0C}
-  .cat>summary{list-style:none;cursor:pointer;padding:11px 12px;display:flex;
-    justify-content:space-between;align-items:center;font-size:12px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--ink-dim)}
-  .cat>summary::-webkit-details-marker{display:none}
-  .cat[open]>summary{color:var(--ink);border-bottom:1px solid var(--line)}
-  .cat>summary .n{font-size:11px;letter-spacing:0;text-transform:none}
-  .cat .inner{padding:8px;display:flex;flex-direction:column;gap:8px}
-  .cat.has-sel>summary{color:var(--amber)}
   .chip{text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:10px;
     padding:11px 12px;cursor:pointer;transition:border-color .15s,background .15s}
   .chip[aria-pressed="true"]{border-color:var(--amber);background:rgba(217,164,65,.07)}
@@ -167,9 +162,9 @@
     <p class="eyebrow"><span>Stil kütüphanesi</span><span id="styleCount">0</span></p>
     <div class="row"><button id="analyze">Referanslardan stilleri çıkar</button></div>
     <div class="row" style="margin-top:8px"><button id="suggest">Bu fotoğrafa en uygun stili öner</button></div>
-    <div class="row" style="margin-top:8px"><button id="fillGrades">Eksik kategori ve önizleme verilerini çıkar</button></div>
+    <div class="row" style="margin-top:8px"><button id="fillGrades">Eksik önizleme verilerini çıkar</button></div>
     <details style="margin-top:10px">
-      <summary class="eyebrow" style="margin:0"><span>Analiz talimatı</span><span class="link">düzenle</span></summary>
+      <summary class="eyebrow" style="margin:0"><span class="sumRow"><span>Analiz talimatı</span><span class="link">düzenle</span></span></summary>
       <label for="aprompt">Stil çıkarırken modele gönderilen metin</label>
       <textarea id="aprompt"></textarea>
       <div class="row" style="margin-top:8px"><button id="resetAnalyze">Varsayılana dön</button></div>
@@ -181,19 +176,21 @@
 
   <!-- Rules -->
   <section>
-    <p class="eyebrow"><span>Değişmez kurallar</span><span id="ruleCount">0</span></p>
-    <div class="rules" id="rules"></div>
-    <div class="addRule">
-      <input id="ruleInput" type="text" placeholder="ör. Yüzü asla değiştirme" autocomplete="off">
-      <button id="ruleAdd">Ekle</button>
-    </div>
-    <p class="hint">Buradaki kurallar her renderda talimatın sonuna eklenir ve sen silene kadar geçerli kalır.</p>
+    <details id="rulesBox">
+      <summary class="eyebrow" style="margin:0"><span class="sumRow"><span>Değişmez kurallar</span><span class="link" id="ruleCount">0</span></span></summary>
+      <div class="rules" id="rules"></div>
+      <div class="addRule">
+        <input id="ruleInput" type="text" placeholder="ör. Yüzü asla değiştirme" autocomplete="off">
+        <button id="ruleAdd">Ekle</button>
+      </div>
+      <p class="hint">Buradaki kurallar her renderda talimatın sonuna eklenir ve sen silene kadar geçerli kalır.</p>
+    </details>
   </section>
 
   <!-- 3. Prompt -->
   <section>
     <details id="promptBox">
-      <summary class="eyebrow"><span>Grade talimatı</span><span class="link">düzenle</span></summary>
+      <summary class="eyebrow"><span class="sumRow"><span>Grade talimatı</span><span class="link">düzenle</span></span></summary>
       <label for="prompt">Her renderda gönderilen metin</label>
       <textarea id="prompt"></textarea>
       <div class="row" style="margin-top:8px">
@@ -205,7 +202,7 @@
   <!-- 4. Settings -->
   <section>
     <details>
-      <summary class="eyebrow"><span>Bağlantı</span><span class="link" id="keyState">anahtar yok</span></summary>
+      <summary class="eyebrow"><span class="sumRow"><span>Bağlantı</span><span class="link" id="keyState">anahtar yok</span></span></summary>
       <label for="key">OpenAI API anahtarı</label>
       <input type="password" id="key" placeholder="sk-..." autocomplete="off">
       <label for="vision">Analiz modeli (stil çıkarma)</label>
@@ -291,8 +288,6 @@ let styles = [];    // {name, desc}
 let styleIdx = -1;  // seçili stil
 let rules = [];     // string[]
 const openStyles = new Set(); // detayı açık stiller
-const CATS = ['Sıcak', 'Soğuk', 'Nötr', 'Gece/Neon', 'Film/Vintage'];
-const openCats = new Set(); // açık kategoriler
 let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
 let srcImg = null;  // önizleme için yüklenmiş kaynak görsel
 let polling = false; // sonuç sorgulaması sürüyor
@@ -504,7 +499,7 @@ function renderRules(){
     del.onclick = () => { rules.splice(i,1); saveRules(); renderRules() };
     el.appendChild(p); el.appendChild(del); box.appendChild(el);
   });
-  $('ruleCount').textContent = rules.length;
+  $('ruleCount').textContent = rules.length ? rules.length + ' aktif' : 'yok';
 }
 
 function addRule(){
@@ -517,6 +512,8 @@ function addRule(){
   $('ruleInput').value = '';
   setStatus('Kural eklendi.');
 }
+$('rulesBox').open = store.get('pg.rulesOpen','0') === '1';
+$('rulesBox').ontoggle = () => store.set('pg.rulesOpen', $('rulesBox').open ? '1' : '0');
 $('ruleAdd').onclick = addRule;
 $('ruleInput').onkeydown = e => { if (e.key === 'Enter') addRule() };
 
@@ -595,42 +592,7 @@ function makeChip(st, i){
 
 function renderStyles(){
   const box = $('styles'); box.innerHTML = '';
-
-  // kategoriye göre grupla; bilinmeyen kategori "Diğer"e düşer
-  const groups = new Map();
-  styles.forEach((st, i) => {
-    const c = CATS.includes(st.cat) ? st.cat : 'Diğer';
-    if (!groups.has(c)) groups.set(c, []);
-    groups.get(c).push(i);
-  });
-
-  const order = CATS.filter(c => groups.has(c)).concat(groups.has('Diğer') ? ['Diğer'] : []);
-
-  order.forEach(cat => {
-    const idxs = groups.get(cat);
-    const dt = document.createElement('details');
-    dt.className = 'cat';
-
-    const hasSel = idxs.includes(styleIdx);
-    const hasRec = rec && idxs.includes(rec.i);
-    if (hasSel || hasRec) { dt.open = true; openCats.add(cat); }
-    else dt.open = openCats.has(cat);
-    if (hasSel || hasRec) dt.classList.add('has-sel');
-
-    dt.ontoggle = () => { if (dt.open) openCats.add(cat); else openCats.delete(cat) };
-
-    const sm = document.createElement('summary');
-    sm.innerHTML = '<span></span><span class="n"></span>';
-    sm.children[0].textContent = cat;
-    sm.children[1].textContent = idxs.length + (hasRec ? ' · önerilen burada' : hasSel ? ' · seçili' : '');
-    dt.appendChild(sm);
-
-    const inner = document.createElement('div');
-    inner.className = 'inner';
-    idxs.forEach(i => inner.appendChild(makeChip(styles[i], i)));
-    dt.appendChild(inner);
-    box.appendChild(dt);
-  });
+  styles.forEach((st, i) => box.appendChild(makeChip(st, i)));
 
   $('styleCount').textContent = styles.length;
 
@@ -644,7 +606,7 @@ function renderStyles(){
     : fresh
       ? 'Sarı çerçeveli ' + fresh + ' referans henüz analiz edilmedi. Çıkan stiller mevcutların üstüne eklenir, hiçbiri silinmez.'
       : (styleIdx >= 0 ? 'Seçili: ' + styles[styleIdx].name + ' — tekrar dokunursan seçim kalkar.'
-                       : 'Kategoriye dokun, içinden stil seç.');
+                       : 'Bir stil seç, yoksa yalnızca ana talimat uygulanır.');
 }
 
 $('analyze').onclick = async () => {
@@ -664,9 +626,7 @@ $('analyze').onclick = async () => {
     '--- ÇIKTI BİÇİMİ (zorunlu) ---\n' +
     'Görseller Instagram grid ekran görüntüsü olabilir: arayüzü, yazıları, butonları, beyaz alanları ' +
     'yok say, sadece fotoğraf karelerine bak. Stil sayısını sen belirle — en fazla 10, uydurma yok.\n' +
-    'Her stil için: name = kısa Türkçe ad. cat = SADECE şu listeden biri: ' +
-    'Sıcak | Soğuk | Nötr | Gece/Neon | Film/Vintage. Yeni kategori uydurma. ' +
-    'desc = bir görsel üretim modeline verilecek İngilizce ' +
+    'Her stil için: name = kısa Türkçe ad. desc = bir görsel üretim modeline verilecek İngilizce ' +
     'teknik renk tarifi (beyaz dengesi yönü, gölge renk kayması, highlight tonu, kontrast eğrisi, ' +
     'doygunluk, bastırılan renkler, cilt tonu davranışı, grain/halation). Tarifte kompozisyon, konu, ' +
     'poz veya kişi TARİF ETME — yalnızca renk ve ışık.\n' +
@@ -681,7 +641,7 @@ $('analyze').onclick = async () => {
     '  highlightTint: [r,g,b] her biri -100..100\n' +
     'Değerler desc ile TUTARLI olsun.\n' +
     'SADECE şu biçimde JSON dizisi döndür, başka hiçbir şey yazma: ' +
-    '[{"name":"...","cat":"Sıcak","desc":"...","grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
+    '[{"name":"...","desc":"...","grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
     '"saturation":0,"lift":0,"shadowTint":[0,0,0],"highlightTint":[0,0,0]}}]' }];
   if (styles.length) {
     content[0].text += ' Kütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
@@ -705,7 +665,6 @@ $('analyze').onclick = async () => {
     const fresh = arr
       .filter(x => x && x.name && x.desc)
       .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim(),
-                   cat: CATS.includes(x.cat) ? x.cat : 'Diğer',
                    grade: (x.grade && typeof x.grade === 'object') ? x.grade : null }))
       .filter(x => !have.includes(x.name.toLowerCase()));
 
@@ -760,8 +719,7 @@ function stopTimer(ok){
 $('fillGrades').onclick = async () => {
   const key = $('key').value.trim();
   if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
-  const missing = styles.map((st,i) => (st.grade && CATS.includes(st.cat)) ? null : i)
-                        .filter(i => i !== null);
+  const missing = styles.map((st,i) => st.grade ? null : i).filter(i => i !== null);
   if (!missing.length) return setStatus('Tüm stillerde önizleme verisi zaten var.');
 
   $('fillGrades').disabled = true; $('lamp').className = 'lamp on';
@@ -773,14 +731,13 @@ $('fillGrades').onclick = async () => {
       method:'POST',
       headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
       body: JSON.stringify({ model: $('vision').value, messages:[{ role:'user', content:
-        'Aşağıda renk stili tarifleri var. Her biri için (1) bir kategori seç, (2) tarifi sayısal ' +
-        'değerlere çevir. Değerler tarifle TUTARLI olsun; abartma, tarifte olmayanı uydurma.\n\n' + list + '\n\n' +
-        'cat SADECE şu listeden biri olsun: Sıcak | Soğuk | Nötr | Gece/Neon | Film/Vintage. Yeni kategori uydurma.\n' +
+        'Aşağıda renk stili tarifleri var. Her biri için tarifi sayısal değerlere çevir. ' +
+        'Değerler tarifle TUTARLI olsun; abartma, tarifte olmayanı uydurma.\n\n' + list + '\n\n' +
         'Alanlar: temp (-100..100, eksi soğuk artı sıcak), tint (-100..100, eksi yeşil artı magenta), ' +
         'exposure (-50..50), contrast (-100..100), saturation (-100..100), lift (0..100 kaldırılmış ' +
         'siyahlar), shadowTint [r,g,b] her biri -100..100, highlightTint [r,g,b] her biri -100..100.\n' +
         'SADECE şu biçimde JSON dizisi döndür, başka hiçbir şey yazma:\n' +
-        '[{"index":<yukarıdaki sayı>,"cat":"Sıcak","grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
+        '[{"index":<yukarıdaki sayı>,"grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
         '"saturation":0,"lift":0,"shadowTint":[0,0,0],"highlightTint":[0,0,0]}}]' }] })
     });
     const data = await r.json();
@@ -793,13 +750,10 @@ $('fillGrades').onclick = async () => {
     let n = 0;
     arr.forEach(o => {
       const i = parseInt(o.index, 10);
-      if (!styles[i]) return;
-      if (o.grade && typeof o.grade === 'object') styles[i].grade = o.grade;
-      if (CATS.includes(o.cat)) styles[i].cat = o.cat;
-      if (o.grade || CATS.includes(o.cat)) n++;
+      if (styles[i] && o.grade && typeof o.grade === 'object') { styles[i].grade = o.grade; n++ }
     });
     saveStyles(); buildPreviews(); renderStyles();
-    setStatus(n ? n + ' stil güncellendi — kategori ve önizleme eklendi.' : 'Veri eklenemedi.', !n);
+    setStatus(n ? n + ' stile önizleme verisi eklendi.' : 'Veri eklenemedi.', !n);
   } catch (err) {
     setStatus('Çıkarılamadı: ' + err.message, true);
   } finally {
