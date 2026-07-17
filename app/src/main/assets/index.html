@@ -492,17 +492,24 @@ $('analyze').onclick = async () => {
   setStatus(batch.length + ' referans analiz ediliyor…');
 
   const content = [{ type:'text', text:
-    'Sen bir renk uzmanı kolorist gibi çalış. Aşağıdaki görseller bir fotoğrafçının işlerini gösteriyor. ' +
-    'Bunlar Instagram grid ekran görüntüsü olabilir: arayüzü, butonları, beyaz alanları, yazıları ve ' +
-    'profil öğelerini TAMAMEN yok say — sadece ızgaradaki fotoğraf karelerine bak. ' +
-    'Kareleri renk karakterine göre grupla ve birbirinden AÇIKÇA AYRI 5-6 stil çıkar. ' +
-    'Birbirine benzeyen genel tarifler yazma; her stil ölçülebilir biçimde farklı olsun.\n\n' +
-    'Her stil için şunları ver:\n' +
+    'Bu görsellerdeki fotoğrafçı, fotoğraflara kendi preset renk düzenlemelerini uyguluyor ve ortaya ' +
+    'belirgin, tanınabilir bir renk imzası çıkıyor. Senden istediğim: bu kişinin renk dilini bir kolorist ' +
+    'gibi çöz, sonra benim vereceğim fotoğraflara aynı stilleri uygulayabilmem için tarifleri çıkar.\n\n' +
+    'ÖNCE ŞUNLARI YOK SAY: bu görseller Instagram grid ekran görüntüsü olabilir. Arayüz, butonlar, ' +
+    'yazılar, beyaz alanlar, profil öğeleri, reklam şeritleri — hiçbirine bakma. Sadece ızgaradaki ' +
+    'fotoğraf karelerine bak.\n\n' +
+    'SONRA: kareleri renk karakterine göre grupla. Bu fotoğrafçının kaç ayrı preseti olduğunu tespit et ' +
+    've birbirinden AÇIKÇA AYRI 5-6 stil çıkar. Genel geçer, birbirine benzeyen tarifler yazma; ' +
+    'her stil ölçülebilir biçimde farklı olsun ve gerçekten o karelerde gördüğün şeyi anlatsın.\n\n' +
+    'Her stil için:\n' +
     '- name: kısa, akılda kalıcı Türkçe ad\n' +
     '- desc: bir görsel üretim modeline verilecek İngilizce teknik tarif. Şunları SOMUT belirt: ' +
     'beyaz dengesi/renk sıcaklığı yönü, gölgelerdeki renk kayması, highlight tonu, kontrast eğrisi ' +
-    '(lifted/crushed blacks), doygunluk ve hangi renklerin bastırıldığı, cilt tonu davranışı, ' +
-    'grain/halation/film karakteri. Kompozisyon, konu, poz veya kadraj YAZMA — yalnızca renk ve ışık.\n\n' +
+    '(lifted veya crushed blacks), doygunluk ve hangi renklerin bastırıldığı, cilt tonu davranışı, ' +
+    'grain/halation/film karakteri.\n\n' +
+    'ÖNEMLİ: tarifler yalnızca RENK ve IŞIK olsun. Kompozisyon, kadraj, konu, poz, mekan veya kişi ' +
+    'tarif etme — çünkü bu tarifler benim kendi fotoğraflarıma uygulanacak ve fotoğrafın içeriği ' +
+    'değişmemeli. Kimseyi veya hiçbir yüzü tarif etme.\n\n' +
     'SADECE şu biçimde JSON dizisi döndür, başka hiçbir şey yazma: [{"name":"...","desc":"..."}]' }];
   if (styles.length) {
     content[0].text += ' Kütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
