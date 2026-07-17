@@ -110,6 +110,11 @@
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:11px;line-height:1}
   .chip.open .chipInfo{color:var(--amber);transform:rotate(180deg)}
   .chip[aria-pressed="true"] b{color:var(--amber)}
+  .chip.rec{border-color:var(--amber)}
+  .badge{display:inline-block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:#0B0A09;background:var(--amber);border-radius:4px;padding:2px 5px;margin-left:7px;
+    vertical-align:2px;font-weight:700}
+  .why{display:block;font-size:11px;color:var(--amber);line-height:1.45;margin-top:5px;font-style:italic}
   .link{color:var(--amber);text-decoration:none}
   details summary{cursor:pointer;list-style:none}
   details summary::-webkit-details-marker{display:none}
@@ -148,6 +153,7 @@
   <section>
     <p class="eyebrow"><span>Stil kütüphanesi</span><span id="styleCount">0</span></p>
     <div class="row"><button id="analyze">Referanslardan stilleri çıkar</button></div>
+    <div class="row" style="margin-top:8px"><button id="suggest">Bu fotoğrafa en uygun stili öner</button></div>
     <div class="styles" id="styles"></div>
     <p class="hint" id="styleHint">Referansları ekledikten sonra bir kez çalıştır. Çıkan stiller kayıtlı kalır, her fotoğrafta birini seçersin.</p>
   </section>
@@ -252,6 +258,7 @@ let styles = [];    // {name, desc}
 let styleIdx = -1;  // seçili stil
 let rules = [];     // string[]
 const openStyles = new Set(); // detayı açık stiller
+let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
 
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
@@ -300,6 +307,7 @@ $('pickSrc').onclick = $('srcDrop').onclick = () => $('srcInput').click();
 $('srcInput').onchange = e => {
   const f = e.target.files[0]; if(!f) return;
   srcFile = f;
+  rec = null; renderStyles();
   const url = URL.createObjectURL(f);
   $('srcDrop').innerHTML = '';
   const img = new Image(); img.src = url; $('srcDrop').appendChild(img);
@@ -307,7 +315,7 @@ $('srcInput').onchange = e => {
   updateGo();
 };
 $('clearSrc').onclick = () => {
-  srcFile = null; $('srcInput').value = '';
+  srcFile = null; $('srcInput').value = ''; rec = null; renderStyles();
   $('srcDrop').textContent = 'Fotoğraf seçmek için dokun';
   $('srcInfo').textContent = ''; updateGo();
 };
@@ -416,6 +424,15 @@ function renderStyles(){
     b.querySelector('b').textContent = st.name;
     b.querySelector('span').textContent = st.desc;
     if (openStyles.has(i)) b.classList.add('open');
+    if (rec && rec.i === i) {
+      b.classList.add('rec');
+      const badge = document.createElement('span');
+      badge.className = 'badge'; badge.textContent = 'önerilen';
+      b.querySelector('b').appendChild(badge);
+      const why = document.createElement('em');
+      why.className = 'why'; why.textContent = rec.why;
+      b.querySelector('b').insertAdjacentElement('afterend', why);
+    }
     b.onclick = () => {
       styleIdx = (styleIdx === i) ? -1 : i;
       store.set('pg.styleIdx', String(styleIdx));
@@ -557,6 +574,54 @@ function stopTimer(ok){
   setTimeout(() => { if (!tick) $('goFill').style.width = '0%' }, 600);
   return sec;
 }
+
+/* ---------- stil önerisi ---------- */
+$('suggest').onclick = async () => {
+  const key = $('key').value.trim();
+  if (!srcFile) return setStatus('Önce fotoğraf seç.', true);
+  if (!styles.length) return setStatus('Önce stil kütüphanesi oluştur.', true);
+  if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
+
+  $('suggest').disabled = true; $('lamp').className = 'lamp on';
+  setStatus('Fotoğrafa uygun stil aranıyor…');
+
+  try {
+    const thumb = await downscale(srcFile, 1024);
+    const list = styles.map((st, i) => i + ') ' + st.name + ' — ' + st.desc).join('\n');
+    const content = [
+      { type:'text', text:
+        'Bir kolorist gibi davran. Aşağıdaki fotoğrafı incele: ışık yönü ve sertliği, günün saati, ' +
+        'mevcut beyaz dengesi, ortam renkleri, cilt tonu, kontrast aralığı, iç/dış mekan.\n\n' +
+        'Şu stil kütüphanesinden bu fotoğrafa EN UYGUN olanı seç. Fotoğrafın mevcut ışığıyla ' +
+        'çelişmeyen, onu güçlendirecek olanı tercih et:\n' + list + '\n\n' +
+        'SADECE şu biçimde JSON döndür, başka hiçbir şey yazma: ' +
+        '{"index": <sayı>, "reason": "<tek cümle, Türkçe, neden bu fotoğrafa uyduğu>"}' },
+      { type:'image_url', image_url:{ url: thumb, detail:'original' } }
+    ];
+
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
+      body: JSON.stringify({ model: $('vision').value, messages:[{ role:'user', content }] })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.error?.message || ('HTTP ' + r.status));
+    let txt = (data?.choices?.[0]?.message?.content || '').trim();
+    txt = txt.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+    const o = JSON.parse(txt);
+    const i = parseInt(o.index, 10);
+    if (isNaN(i) || !styles[i]) throw new Error('Öneri okunamadı.');
+
+    rec = { i, why: String(o.reason || '') };
+    styleIdx = i; store.set('pg.styleIdx', String(i));   // öneriyi doğrudan seç
+    renderStyles();
+    setStatus('Önerilen: ' + styles[i].name + ' — seçildi, istersen değiştir.');
+  } catch (err) {
+    setStatus('Öneri alınamadı: ' + err.message, true);
+  } finally {
+    $('suggest').disabled = false; $('lamp').className = 'lamp';
+  }
+};
 
 /* ---------- render ---------- */
 function updateGo(){ $('go').disabled = !(srcFile && $('key').value.trim()) }
