@@ -100,7 +100,11 @@
   .chip{text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:10px;
     padding:11px 12px;cursor:pointer;transition:border-color .15s,background .15s}
   .chip[aria-pressed="true"]{border-color:var(--amber);background:rgba(217,164,65,.07)}
-  .chip{position:relative;padding-right:62px}
+  .chip{position:relative;padding-right:62px;display:flex;gap:10px;align-items:flex-start}
+  .chipBody{flex:1;min-width:0}
+  .prev{flex:none;width:56px;height:56px;border-radius:6px;object-fit:cover;
+    border:1px solid var(--line);background:#0F0D0C}
+  .prev.ghost{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--ink-dim)}
   .chip b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}
   .chipDel{position:absolute;top:8px;right:8px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
@@ -278,6 +282,7 @@ let styleIdx = -1;  // seçili stil
 let rules = [];     // string[]
 const openStyles = new Set(); // detayı açık stiller
 let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
+let srcImg = null;  // önizleme için yüklenmiş kaynak görsel
 
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
@@ -329,15 +334,19 @@ $('pickSrc').onclick = $('srcDrop').onclick = () => $('srcInput').click();
 $('srcInput').onchange = e => {
   const f = e.target.files[0]; if(!f) return;
   srcFile = f;
-  rec = null; renderStyles();
+  rec = null;
   const url = URL.createObjectURL(f);
+  const pi = new Image();
+  pi.onload = () => { srcImg = pi; buildPreviews() };
+  pi.src = url;
   $('srcDrop').innerHTML = '';
   const img = new Image(); img.src = url; $('srcDrop').appendChild(img);
   $('srcInfo').textContent = (f.size/1048576).toFixed(1) + ' MB';
   updateGo();
 };
 $('clearSrc').onclick = () => {
-  srcFile = null; $('srcInput').value = ''; rec = null; renderStyles();
+  srcFile = null; $('srcInput').value = ''; rec = null; srcImg = null;
+  styles.forEach(st => st.prev = null); renderStyles();
   $('srcDrop').textContent = 'Fotoğraf seçmek için dokun';
   $('srcInfo').textContent = ''; updateGo();
 };
@@ -404,6 +413,77 @@ function dataUrlToBlob(d){
   return new Blob([arr], {type: mime});
 }
 
+/* ---------- yerel önizleme motoru ----------
+   Stilin sayısal değerlerini fotoğrafa canvas'ta uygular. Yaklaşıktır;
+   gerçek render değil, sadece seçim yapmaya yardım eder. */
+function clamp(v, a, b){ return v < a ? a : v > b ? b : v }
+
+function applyGrade(img, g, size){
+  const c = document.createElement('canvas');
+  const s = Math.min(1, size / Math.max(img.width, img.height));
+  c.width = Math.max(1, Math.round(img.width * s));
+  c.height = Math.max(1, Math.round(img.height * s));
+  const x = c.getContext('2d');
+  x.drawImage(img, 0, 0, c.width, c.height);
+
+  const d = x.getImageData(0, 0, c.width, c.height);
+  const p = d.data;
+
+  const temp = (g.temp || 0) / 100;        // + sıcak, - soğuk
+  const tint = (g.tint || 0) / 100;        // + magenta, - yeşil
+  const expo = (g.exposure || 0) / 100;
+  const con  = (g.contrast || 0) / 100;
+  const sat  = 1 + (g.saturation || 0) / 100;
+  const lift = (g.lift || 0) / 100;        // kaldırılmış siyahlar
+  const sh   = g.shadowTint || [0,0,0];    // -100..100
+  const hi   = g.highlightTint || [0,0,0];
+
+  for (let i = 0; i < p.length; i += 4) {
+    let r = p[i] / 255, gr = p[i+1] / 255, b = p[i+2] / 255;
+
+    // pozlama
+    if (expo) { r += expo; gr += expo; b += expo; }
+
+    // ısı / tint
+    r += temp * 0.12; b -= temp * 0.12;
+    gr -= tint * 0.08; r += tint * 0.04; b += tint * 0.04;
+
+    // kontrast (0.5 merkezli)
+    if (con) { const k = 1 + con; r = (r-0.5)*k+0.5; gr = (gr-0.5)*k+0.5; b = (b-0.5)*k+0.5; }
+
+    // lifted blacks
+    if (lift) { const l = lift * 0.25; r = l + r*(1-l); gr = l + gr*(1-l); b = l + b*(1-l); }
+
+    // gölge / highlight renk kayması, parlaklığa göre ağırlıklı
+    const lum = 0.2126*r + 0.7152*gr + 0.0722*b;
+    const ws = clamp(1 - lum*1.6, 0, 1), wh = clamp((lum-0.4)*1.6, 0, 1);
+    r += (sh[0]/100)*0.16*ws + (hi[0]/100)*0.16*wh;
+    gr += (sh[1]/100)*0.16*ws + (hi[1]/100)*0.16*wh;
+    b += (sh[2]/100)*0.16*ws + (hi[2]/100)*0.16*wh;
+
+    // doygunluk
+    if (sat !== 1) {
+      const L = 0.2126*r + 0.7152*gr + 0.0722*b;
+      r = L + (r-L)*sat; gr = L + (gr-L)*sat; b = L + (b-L)*sat;
+    }
+
+    p[i]   = clamp(r,0,1) * 255;
+    p[i+1] = clamp(gr,0,1) * 255;
+    p[i+2] = clamp(b,0,1) * 255;
+  }
+  x.putImageData(d, 0, 0);
+  return c.toDataURL('image/jpeg', 0.8);
+}
+
+function buildPreviews(){
+  if (!srcImg) return;
+  styles.forEach((st, i) => {
+    if (!st.grade) { st.prev = null; return; }
+    try { st.prev = applyGrade(srcImg, st.grade, 220) } catch(e) { st.prev = null }
+  });
+  renderStyles();
+}
+
 /* ---------- değişmez kurallar ---------- */
 function saveRules(){ store.set('pg.rules', JSON.stringify(rules)) }
 
@@ -434,7 +514,10 @@ $('ruleAdd').onclick = addRule;
 $('ruleInput').onkeydown = e => { if (e.key === 'Enter') addRule() };
 
 /* ---------- stil kütüphanesi ---------- */
-function saveStyles(){ store.set('pg.styles', JSON.stringify(styles)) }
+function saveStyles(){
+  // prev = geçici önizleme, kaydetme
+  store.set('pg.styles', JSON.stringify(styles.map(({prev, ...st}) => st)));
+}
 
 function renderStyles(){
   const box = $('styles'); box.innerHTML = '';
@@ -442,7 +525,20 @@ function renderStyles(){
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('aria-pressed', String(i === styleIdx));
-    b.innerHTML = '<b></b><span></span>';
+    b.innerHTML = '<div class="chipBody"><b></b><span></span></div>';
+
+    if (srcImg) {
+      if (st.prev) {
+        const im = document.createElement('img');
+        im.className = 'prev'; im.src = st.prev; im.alt = st.name + ' önizlemesi';
+        b.insertBefore(im, b.firstChild);
+      } else {
+        const gh = document.createElement('div');
+        gh.className = 'prev ghost'; gh.textContent = 'önizleme yok';
+        b.insertBefore(gh, b.firstChild);
+      }
+    }
+
     b.querySelector('b').textContent = st.name;
     b.querySelector('span').textContent = st.desc;
     if (openStyles.has(i)) b.classList.add('open');
@@ -522,7 +618,19 @@ $('analyze').onclick = async () => {
     'teknik renk tarifi (beyaz dengesi yönü, gölge renk kayması, highlight tonu, kontrast eğrisi, ' +
     'doygunluk, bastırılan renkler, cilt tonu davranışı, grain/halation). Tarifte kompozisyon, konu, ' +
     'poz veya kişi TARİF ETME — yalnızca renk ve ışık.\n' +
-    'SADECE şu biçimde JSON dizisi döndür, başka hiçbir şey yazma: [{"name":"...","desc":"..."}]' }];
+    'grade = aynı görünümün yaklaşık sayısal karşılığı (hızlı önizleme için). Alanlar:\n' +
+    '  temp: -100..100 (eksi soğuk / artı sıcak)\n' +
+    '  tint: -100..100 (eksi yeşil / artı magenta)\n' +
+    '  exposure: -50..50\n' +
+    '  contrast: -100..100\n' +
+    '  saturation: -100..100\n' +
+    '  lift: 0..100 (kaldırılmış siyahlar, film hissi)\n' +
+    '  shadowTint: [r,g,b] her biri -100..100 (gölgelere kayan renk)\n' +
+    '  highlightTint: [r,g,b] her biri -100..100\n' +
+    'Değerler desc ile TUTARLI olsun.\n' +
+    'SADECE şu biçimde JSON dizisi döndür, başka hiçbir şey yazma: ' +
+    '[{"name":"...","desc":"...","grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
+    '"saturation":0,"lift":0,"shadowTint":[0,0,0],"highlightTint":[0,0,0]}}]' }];
   if (styles.length) {
     content[0].text += ' Kütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
       + styles.map(x => x.name).join(', ') + '.';
@@ -544,12 +652,13 @@ $('analyze').onclick = async () => {
     const have = styles.map(x => x.name.toLowerCase().trim());
     const fresh = arr
       .filter(x => x && x.name && x.desc)
-      .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim() }))
+      .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim(),
+                   grade: (x.grade && typeof x.grade === 'object') ? x.grade : null }))
       .filter(x => !have.includes(x.name.toLowerCase()));
 
     styles = styles.concat(fresh);          // eskiler korunur, üstüne eklenir
     batch.forEach(r => r.done = true);
-    saveRefs(); saveStyles(); renderRefs(); renderStyles();
+    saveRefs(); saveStyles(); renderRefs(); buildPreviews(); renderStyles();
 
     setStatus(fresh.length
       ? fresh.length + ' yeni stil eklendi. Kütüphanede toplam ' + styles.length + '.'
