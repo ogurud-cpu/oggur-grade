@@ -145,8 +145,6 @@
     <div class="row"><button id="pickRef">Referans ekle</button></div>
     <input type="file" id="refInput" accept="image/*" multiple hidden>
     <div class="refs" id="refs"></div>
-    <label for="handle" style="display:block;font-size:12px;color:var(--ink-dim);margin:12px 0 5px">Fotoğrafçı kullanıcı adı</label>
-    <input id="handle" type="text" placeholder="ör. pattakespictures" autocomplete="off">
     <label class="sw"><input type="checkbox" id="sendRefs"> Referansları her renderda da gönder</label>
     <p class="hint">Kapalıyken referanslar yalnızca stil çıkarmak için kullanılır — render ucuzlar ve hızlanır. Stil metni görünümü zaten taşır.</p>
   </section>
@@ -285,8 +283,6 @@ let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
 $('aprompt').value = store.get('pg.aprompt', DEFAULT_ANALYZE);
 $('key').value = store.get('pg.key', '');
-$('handle').value = store.get('pg.handle', '');
-$('handle').oninput = () => store.set('pg.handle', $('handle').value);
 $('sendRefs').checked = store.get('pg.sendRefs','0') === '1';
 $('sendRefs').onchange = () => store.set('pg.sendRefs', $('sendRefs').checked ? '1' : '0');
 $('vision').value = store.get('pg.vision', 'gpt-5.6');
@@ -546,14 +542,9 @@ $('analyze').onclick = async () => {
     const arr = JSON.parse(txt);
     if (!Array.isArray(arr) || !arr.length) throw new Error('Stil listesi okunamadı.');
     const have = styles.map(x => x.name.toLowerCase().trim());
-    const h = $('handle').value.trim();
     const fresh = arr
       .filter(x => x && x.name && x.desc)
-      .map(x => {
-        let n = String(x.name).trim();
-        if (h && !n.toLowerCase().startsWith(h.toLowerCase())) n = h + ' · ' + n;
-        return { name:n, desc:String(x.desc).trim() };
-      })
+      .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim() }))
       .filter(x => !have.includes(x.name.toLowerCase()));
 
     styles = styles.concat(fresh);          // eskiler korunur, üstüne eklenir
