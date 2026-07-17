@@ -153,6 +153,7 @@
     <div class="row"><button id="pickRef">Referans ekle</button></div>
     <input type="file" id="refInput" accept="image/*" multiple hidden>
     <div class="refs" id="refs"></div>
+    <p class="hint" id="refHint">Hepsini birden ekle — analiz otomatik olarak 4'erli gruplara bölünür.</p>
     <label class="sw"><input type="checkbox" id="sendRefs"> Referansları her renderda da gönder</label>
     <p class="hint">Kapalıyken referanslar yalnızca stil çıkarmak için kullanılır — render ucuzlar ve hızlanır. Stil metni görünümü zaten taşır.</p>
   </section>
@@ -292,6 +293,8 @@ let styles = [];    // {name, desc}
 let styleIdx = -1;  // seçili stil
 let rules = [];     // string[]
 const openStyles = new Set(); // detayı açık stiller
+const REF_MAX = 12;   // toplam referans sınırı
+const BATCH = 4;      // tek istekte gönderilecek referans sayısı
 let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
 let srcImg = null;  // önizleme için yüklenmiş kaynak görsel
 let polling = false; // sonuç sorgulaması sürüyor
@@ -368,12 +371,19 @@ $('clearSrc').onclick = () => {
 $('pickRef').onclick = () => $('refInput').click();
 $('refInput').onchange = async e => {
   for (const f of e.target.files) {
-    if (refs.length >= 4) { setStatus('En fazla 4 referans kullanılabilir.', true); break }
-    refs.push({ d: await downscale(f, 1400), done: false });
+    if (refs.length >= REF_MAX) { setStatus('En fazla ' + REF_MAX + ' referans kullanılabilir.', true); break }
+    refs.push({ d: await downscale(f, 1100), done: false });
   }
   saveRefs(); renderRefs(); $('refInput').value = '';
 };
-function saveRefs(){ store.set('pg.refs', JSON.stringify(refs)) }
+function saveRefs(){
+  try { localStorage.setItem('pg.refs', JSON.stringify(refs)) }
+  catch(e) {
+    // depo doldu: referanslar bu oturumda çalışır ama kaydedilmez
+    $('refHint').textContent = 'Depo doldu — referanslar kaydedilemiyor ama bu oturumda çalışır. '
+      + 'Analizden sonra silersen sorun kalmaz.';
+  }
+}
 function renderRefs(){
   $('refs').innerHTML = '';
   refs.forEach((r, i) => {
@@ -616,18 +626,8 @@ function renderStyles(){
                        : 'Bir stil seç, yoksa yalnızca ana talimat uygulanır.');
 }
 
-$('analyze').onclick = async () => {
-  const key = $('key').value.trim();
-  if (!refs.length) return setStatus('Önce referans görsel ekle.', true);
-  if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
-
-  // Yeni referans varsa sadece onları, yoksa hepsini analiz et
-  let batch = refs.filter(r => !r.done);
-  if (!batch.length) batch = refs.slice();
-
-  $('analyze').disabled = true; $('lamp').className = 'lamp on';
-  setStatus(batch.length + ' referans analiz ediliyor…');
-
+/* Tek grup için analiz isteği — sonuç: yeni stil dizisi */
+async function analyzeBatch(key, group){
   const content = [{ type:'text', text:
     $('aprompt').value + '\n\n' +
     '--- ÇIKTI BİÇİMİ (yalnızca teknik şart) ---\n' +
@@ -637,77 +637,78 @@ $('analyze').onclick = async () => {
     'highlightTint [r,g,b] her biri -100..100.\n' +
     'Şablon: [{"name":"...","desc":"...","grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
     '"saturation":0,"lift":0,"shadowTint":[0,0,0],"highlightTint":[0,0,0]}}]' }];
+
   if (styles.length) {
-    content[0].text += ' Kütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
+    content[0].text += '\n\nKütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
       + styles.map(x => x.name).join(', ') + '.';
   }
-  batch.forEach(r => content.push({ type:'image_url', image_url:{ url:r.d, detail:'original' } }));
+  group.forEach(r => content.push({ type:'image_url', image_url:{ url:r.d, detail:'original' } }));
 
-  try {
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method:'POST',
-      headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
-      body: JSON.stringify({ model: $('vision').value, messages:[{ role:'user', content }] })
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data?.error?.message || ('HTTP ' + r.status));
-    let txt = (data?.choices?.[0]?.message?.content || '').trim();
-    txt = txt.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
-    const arr = JSON.parse(txt);
-    if (!Array.isArray(arr) || !arr.length) throw new Error('Stil listesi okunamadı.');
-    const have = styles.map(x => x.name.toLowerCase().trim());
-    const fresh = arr
-      .filter(x => x && x.name && x.desc)
-      .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim(),
-                   grade: (x.grade && typeof x.grade === 'object') ? x.grade : null }))
-      .filter(x => !have.includes(x.name.toLowerCase()));
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST',
+    headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
+    body: JSON.stringify({ model: $('vision').value, messages:[{ role:'user', content }] })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data?.error?.message || ('HTTP ' + r.status));
+  let txt = (data?.choices?.[0]?.message?.content || '').trim();
+  txt = txt.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+  const arr = JSON.parse(txt);
+  if (!Array.isArray(arr)) throw new Error('Stil listesi okunamadı.');
+  return arr;
+}
 
-    styles = styles.concat(fresh);          // eskiler korunur, üstüne eklenir
-    batch.forEach(r => r.done = true);
-    saveRefs(); saveStyles(); renderRefs(); buildPreviews(); renderStyles();
+$('analyze').onclick = async () => {
+  const key = $('key').value.trim();
+  if (!refs.length) return setStatus('Önce referans görsel ekle.', true);
+  if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
 
-    setStatus(fresh.length
-      ? fresh.length + ' yeni stil eklendi. Kütüphanede toplam ' + styles.length + '.'
-      : 'Yeni stil çıkmadı, kütüphane aynı kaldı.');
-  } catch (err) {
-    setStatus('Analiz başarısız: ' + err.message, true);
-  } finally {
-    $('analyze').disabled = false; $('lamp').className = 'lamp';
+  // Yeni referans varsa sadece onları, yoksa hepsini analiz et
+  let todo = refs.filter(r => !r.done);
+  if (!todo.length) todo = refs.slice();
+
+  // 4'erli gruplara böl — tek istekte çok görsel bağlantıyı düşürüyor
+  const groups = [];
+  for (let i = 0; i < todo.length; i += BATCH) groups.push(todo.slice(i, i + BATCH));
+
+  $('analyze').disabled = true; $('lamp').className = 'lamp on';
+
+  let added = 0, failed = 0;
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g = groups[gi];
+    setStatus(groups.length > 1
+      ? 'Grup ' + (gi+1) + '/' + groups.length + ' analiz ediliyor (' + g.length + ' referans)…'
+      : g.length + ' referans analiz ediliyor…');
+
+    try {
+      const arr = await analyzeBatch(key, g);
+      const have = styles.map(x => x.name.toLowerCase().trim());
+      const fresh = arr
+        .filter(x => x && x.name && x.desc)
+        .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim(),
+                     grade: (x.grade && typeof x.grade === 'object') ? x.grade : null }))
+        .filter(x => !have.includes(x.name.toLowerCase()));
+
+      styles = styles.concat(fresh);   // eskiler korunur, üstüne eklenir
+      added += fresh.length;
+      g.forEach(r => r.done = true);
+      saveRefs(); saveStyles(); renderRefs(); buildPreviews(); renderStyles();
+    } catch (err) {
+      failed++;
+      setStatus('Grup ' + (gi+1) + ' başarısız: ' + err.message, true);
+      if (/insufficient permissions|invalid api key|401|403/i.test(err.message)) break; // yetki sorunu: devam etmenin anlamı yok
+    }
+  }
+
+  $('analyze').disabled = false; $('lamp').className = 'lamp';
+
+  if (added) {
+    setStatus(added + ' yeni stil eklendi. Kütüphanede toplam ' + styles.length + '.'
+      + (failed ? ' (' + failed + ' grup başarısız)' : ''));
+  } else if (!failed) {
+    setStatus('Yeni stil çıkmadı, kütüphane aynı kaldı.');
   }
 };
-
-/* ---------- render sayacı ---------- */
-let tick = null, t0 = 0;
-const EXPECT = 50; // beklenen saniye; şerit buna göre dolar
-
-function fmt(sec){
-  const m = Math.floor(sec/60), s2 = sec % 60;
-  return m ? m + ':' + String(s2).padStart(2,'0') : s2 + ' sn';
-}
-function startTimer(){
-  try { if (window.Android && window.Android.keepAwake) window.Android.keepAwake(true) } catch(e){}
-  t0 = Date.now();
-  $('go').classList.add('working');
-  $('goFill').style.width = '0%';
-  const paint = () => {
-    const sec = Math.floor((Date.now() - t0) / 1000);
-    // %92'ye kadar doldur, kalanı sonuç gelince kapansın
-    const pct = Math.min(92, (sec / EXPECT) * 92);
-    $('goFill').style.width = pct.toFixed(1) + '%';
-    $('goLbl').textContent = 'Render ediliyor · ' + fmt(sec);
-  };
-  paint(); tick = setInterval(paint, 500);
-}
-function stopTimer(ok){
-  try { if (window.Android && window.Android.keepAwake) window.Android.keepAwake(false) } catch(e){}
-  clearInterval(tick); tick = null;
-  const sec = Math.floor((Date.now() - t0) / 1000);
-  $('goFill').style.width = ok ? '100%' : '0%';
-  $('go').classList.remove('working');
-  $('goLbl').textContent = 'Render et';
-  setTimeout(() => { if (!tick) $('goFill').style.width = '0%' }, 600);
-  return sec;
-}
 
 /* ---------- eski stillere önizleme verisi üret ---------- */
 $('fillGrades').onclick = async () => {
