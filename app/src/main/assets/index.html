@@ -161,12 +161,6 @@
       <label for="aprompt">Stil çıkarırken modele gönderilen metin</label>
       <textarea id="aprompt"></textarea>
       <div class="row" style="margin-top:8px"><button id="resetAnalyze">Varsayılana dön</button></div>
-    </details>
-    <details style="margin-top:10px">
-      <summary class="eyebrow" style="margin:0"><span>Analiz talimatı</span><span class="link">düzenle</span></summary>
-      <label for="analyzePrompt">Stil çıkarırken modele gönderilen metin</label>
-      <textarea id="analyzePrompt"></textarea>
-      <div class="row" style="margin-top:8px"><button id="resetAnalyze">Varsayılana dön</button></div>
       <p class="hint">JSON biçim şartı otomatik eklenir, onu yazmana gerek yok.</p>
     </details>
     <div class="styles" id="styles"></div>
@@ -290,7 +284,6 @@ let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
 $('aprompt').value = store.get('pg.aprompt', DEFAULT_ANALYZE);
-$('analyzePrompt').value = store.get('pg.analyzePrompt', DEFAULT_ANALYZE);
 $('key').value = store.get('pg.key', '');
 $('handle').value = store.get('pg.handle', '');
 $('handle').oninput = () => store.set('pg.handle', $('handle').value);
@@ -328,8 +321,6 @@ syncFidelity();
 $('fidelity').onchange = () => store.set('pg.fidelity', $('fidelity').value);
 $('size').onchange = () => store.set('pg.size', $('size').value);
 $('quality').onchange = () => store.set('pg.quality', $('quality').value);
-$('analyzePrompt').oninput = () => store.set('pg.analyzePrompt', $('analyzePrompt').value);
-$('resetAnalyze').onclick = () => { $('analyzePrompt').value = DEFAULT_ANALYZE; store.set('pg.analyzePrompt', DEFAULT_ANALYZE); setStatus('Analiz talimatı varsayılana döndü.') };
 $('resetPrompt').onclick = () => { $('prompt').value = DEFAULT_PROMPT; store.set('pg.prompt', DEFAULT_PROMPT); setStatus('Talimat varsayılana döndü.') };
 
 function updateKeyState(){
