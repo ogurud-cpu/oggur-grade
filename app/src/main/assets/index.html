@@ -283,6 +283,8 @@ let rules = [];     // string[]
 const openStyles = new Set(); // detayı açık stiller
 let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
 let srcImg = null;  // önizleme için yüklenmiş kaynak görsel
+let polling = false; // sonuç sorgulaması sürüyor
+let sending = false; // iş henüz gönderiliyor: bu anda çıkmak işi öldürür
 
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
@@ -788,44 +790,75 @@ $('go').onclick = async () => {
   if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
 
   $('go').disabled = true; $('lamp').className = 'lamp on';
+  sending = true;
   startTimer();
   setStatus('İş gönderiliyor…');
 
+  const sizes = [1600, 1200, 900];   // ağ düşerse küçülterek tekrar dene
+  let lastErr = null;
+
   try {
-    const srcBlob = await shrinkToBlob(srcFile, 2048);
-    const content = [{ type:'input_text', text: buildPrompt() },
-                     { type:'input_image', image_url: await fileToDataUrl(srcBlob) }];
-    if ($('sendRefs').checked) {
-      for (const r of refs) content.push({ type:'input_image', image_url: r.d });
+    for (let attempt = 0; attempt < sizes.length; attempt++) {
+      const px = sizes[attempt];
+      try {
+        const srcBlob = await shrinkToBlob(srcFile, px);
+        const srcUrl = await fileToDataUrl(srcBlob);
+
+        const content = [{ type:'input_text', text: buildPrompt() },
+                         { type:'input_image', image_url: srcUrl }];
+        if ($('sendRefs').checked) {
+          for (const r of refs) content.push({ type:'input_image', image_url: r.d });
+        }
+
+        const tool = { type:'image_generation', model: $('model').value, quality: $('quality').value };
+        if ($('size').value !== 'auto') tool.size = $('size').value;
+        if ($('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1.5') {
+          tool.input_fidelity = $('fidelity').value;
+        }
+
+        const body = JSON.stringify({
+          model: 'gpt-5.6',
+          input: [{ role:'user', content }],
+          tools: [tool],
+          tool_choice: { type:'image_generation' },
+          background: true
+        });
+
+        const mb = (body.length / 1048576).toFixed(1);
+        setStatus(attempt ? 'Küçültülüp tekrar deneniyor (' + px + 'px · ' + mb + ' MB)…'
+                          : 'İş gönderiliyor (' + mb + ' MB)…');
+
+        const r = await fetch('https://api.openai.com/v1/responses', {
+          method:'POST',
+          headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
+          body
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          // API cevap verdi ama reddetti: küçültmek fayda etmez, dur
+          throw Object.assign(new Error(data?.error?.message || ('HTTP ' + r.status)), { fatal:true });
+        }
+        if (!data.id) throw Object.assign(new Error('İş kimliği alınamadı.'), { fatal:true });
+
+        store.set('pg.job', JSON.stringify({ id: data.id, t: Date.now() }));
+        sending = false;
+        setStatus('İş sıraya alındı ✓ Artık uygulamadan çıkabilirsin.');
+        pollJob(data.id);
+        return;
+
+      } catch (e) {
+        if (e.fatal) throw e;
+        lastErr = e;
+        const net = /failed to fetch|network|load failed/i.test(e.message || '');
+        if (!net) throw e;      // ağ sorunu değilse küçültmenin anlamı yok
+      }
     }
+    throw new Error('Gönderilemedi. ' + (($('sendRefs').checked)
+      ? 'Referansları kapatıp tekrar dene.'
+      : 'İnternet bağlantını kontrol et.'));
 
-    const tool = { type:'image_generation', model: $('model').value, quality: $('quality').value };
-    if ($('size').value !== 'auto') tool.size = $('size').value;
-    // input_fidelity yalnızca gpt-image-1 ve 1.5'te geçerli; bu uçta varsayılanı "low"
-    // olduğu için açıkça yükseltiyoruz. gpt-image-2 parametreyi reddeder — zaten hep yüksek.
-    if ($('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1.5') {
-      tool.input_fidelity = $('fidelity').value;
-    }
-
-    const r = await fetch('https://api.openai.com/v1/responses', {
-      method:'POST',
-      headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-5.6',
-        input: [{ role:'user', content }],
-        tools: [tool],
-        tool_choice: { type:'image_generation' },
-        background: true
-      })
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data?.error?.message || ('HTTP ' + r.status));
-    if (!data.id) throw new Error('İş kimliği alınamadı.');
-
-    store.set('pg.job', JSON.stringify({ id: data.id, t: Date.now() }));
-    setStatus('İş sıraya alındı. Uygulamadan çıkabilirsin, sonucu saklarım.');
-    pollJob(data.id);
   } catch (err) {
+    sending = false;
     stopTimer(false);
     $('go').disabled = false; $('lamp').className = 'lamp'; updateGo();
     const m = /failed to fetch|network/i.test(err.message)
@@ -836,7 +869,6 @@ $('go').onclick = async () => {
 };
 
 /* Sonucu sor — bağlantı kopsa, uygulama kapansa da iş sunucuda sürer */
-let polling = false;
 
 async function pollJob(id){
   if (polling) return;
@@ -924,9 +956,9 @@ $('clearResult').onclick = () => {
 
 /* Arka plan uyarısı: iş sunucuda sürer ama kullanıcı bilsin */
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && polling) {
-    setStatus('İş arka planda sürüyor, geri döndüğünde sonucu alırım.');
-  }
+  if (!document.hidden) return;
+  if (sending) setStatus('Çıkma! İş henüz gönderilmedi, kesilebilir.', true);
+  else if (polling) setStatus('İş arka planda sürüyor, geri döndüğünde sonucu alırım.');
 });
 
 $('share').onclick = async () => {
