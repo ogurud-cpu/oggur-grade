@@ -405,13 +405,6 @@ function shrinkToBlob(file, max){
   });
 }
 
-function dataUrlToBlob(d){
-  const [head, b64] = d.split(',');
-  const mime = head.match(/:(.*?);/)[1];
-  const bin = atob(b64); const arr = new Uint8Array(bin.length);
-  for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
-  return new Blob([arr], {type: mime});
-}
 
 /* ---------- yerel önizleme motoru ----------
    Stilin sayısal değerlerini fotoğrafa canvas'ta uygular. Yaklaşıktır;
@@ -767,6 +760,28 @@ $('suggest').onclick = async () => {
 function updateGo(){ $('go').disabled = !(srcFile && $('key').value.trim()) }
 function setStatus(t, err){ $('status').textContent = t; $('status').className = 'status' + (err?' err':'') }
 
+async function fileToDataUrl(blob){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error('Fotoğraf okunamadı'));
+    r.readAsDataURL(blob);
+  });
+}
+
+function buildPrompt(){
+  let p = $('prompt').value;
+  if (styleIdx >= 0 && styles[styleIdx]) {
+    p += '\n\nApply this color grade: ' + styles[styleIdx].name + '. ' + styles[styleIdx].desc;
+  }
+  if (rules.length) {
+    p += '\n\nNON-NEGOTIABLE RULES — these override everything above and must be followed exactly:\n'
+       + rules.map((r,i) => (i+1) + '. ' + r).join('\n');
+  }
+  return p;
+}
+
+/* İşi arka planda başlat: bağlantı kopsa da sunucuda çalışmaya devam eder */
 $('go').onclick = async () => {
   const key = $('key').value.trim();
   if (!srcFile) return setStatus('Önce bir fotoğraf seç.', true);
@@ -774,69 +789,116 @@ $('go').onclick = async () => {
 
   $('go').disabled = true; $('lamp').className = 'lamp on';
   startTimer();
-  setStatus('');
-
-  const fd = new FormData();
-  const model = $('model').value;
-  fd.append('model', model);
-  // input_fidelity yalnızca eski modellerde geçerli; yenilerde zaten hep yüksek
-  if (model === 'gpt-image-1' || model === 'gpt-image-1-mini') {
-    fd.append('input_fidelity', $('fidelity').value);
-  }
-  let prompt = $('prompt').value;
-  if (styleIdx >= 0 && styles[styleIdx]) {
-    prompt += '\n\nApply this color grade: ' + styles[styleIdx].name + '. ' + styles[styleIdx].desc;
-  }
-  if (rules.length) {
-    prompt += '\n\nNON-NEGOTIABLE RULES — these override everything above and must be followed exactly:\n'
-            + rules.map((r,i) => (i+1) + '. ' + r).join('\n');
-  }
-  fd.append('prompt', prompt);
-  fd.append('quality', $('quality').value);
-  if ($('size').value !== 'auto') fd.append('size', $('size').value);
-  const srcBlob = await shrinkToBlob(srcFile, 2048);
-  fd.append('image[]', srcBlob, 'source.jpg');
-  if ($('sendRefs').checked) {
-    refs.forEach((r,i) => fd.append('image[]', dataUrlToBlob(r.d), `ref${i}.jpg`));
-  }
+  setStatus('İş gönderiliyor…');
 
   try {
-    const r = await fetch('https://api.openai.com/v1/images/edits', {
-      method:'POST', headers:{ 'Authorization':'Bearer ' + key }, body: fd
+    const srcBlob = await shrinkToBlob(srcFile, 2048);
+    const content = [{ type:'input_text', text: buildPrompt() },
+                     { type:'input_image', image_url: await fileToDataUrl(srcBlob) }];
+    if ($('sendRefs').checked) {
+      for (const r of refs) content.push({ type:'input_image', image_url: r.d });
+    }
+
+    const tool = { type:'image_generation', model: $('model').value, quality: $('quality').value };
+    if ($('size').value !== 'auto') tool.size = $('size').value;
+    // Responses API'de bu varsayılan olarak "low" — yüz koruma için açıkça yükseltiyoruz
+    if ($('model').value !== 'gpt-image-1-mini') tool.input_fidelity = 'high';
+
+    const r = await fetch('https://api.openai.com/v1/responses', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer ' + key, 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-5.6',
+        input: [{ role:'user', content }],
+        tools: [tool],
+        tool_choice: { type:'image_generation' },
+        background: true
+      })
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data?.error?.message || ('HTTP ' + r.status));
-    const b64 = data?.data?.[0]?.b64_json;
-    if (!b64) throw new Error('Yanıt görsel içermiyor.');
-    $('result').src = 'data:image/png;base64,' + b64;
-    $('resultWrap').hidden = false;
-    setStatus('Hazır · ' + fmt(stopTimer(true)));
-    $('resultWrap').scrollIntoView({behavior:'smooth', block:'start'});
+    if (!data.id) throw new Error('İş kimliği alınamadı.');
+
+    store.set('pg.job', JSON.stringify({ id: data.id, t: Date.now() }));
+    setStatus('İş sıraya alındı. Uygulamadan çıkabilirsin, sonucu saklarım.');
+    pollJob(data.id);
   } catch (err) {
     stopTimer(false);
+    $('go').disabled = false; $('lamp').className = 'lamp'; updateGo();
     const m = /failed to fetch|network/i.test(err.message)
-      ? 'Bağlantı koptu. Fotoğraf çok büyük olabilir ya da uygulamadan çıkıldı. Referansları kapatıp tekrar dene.'
+      ? 'Bağlantı koptu, iş gönderilemedi. Fotoğraf çok büyük olabilir; referansları kapatıp tekrar dene.'
       : err.message;
     setStatus(m, true);
+  }
+};
+
+/* Sonucu sor — bağlantı kopsa, uygulama kapansa da iş sunucuda sürer */
+let polling = false;
+
+async function pollJob(id){
+  if (polling) return;
+  polling = true;
+  const key = $('key').value.trim();
+  $('go').disabled = true; $('lamp').className = 'lamp on';
+  if (!tick) startTimer();
+
+  const started = Date.now();
+  try {
+    while (true) {
+      if (Date.now() - started > 15 * 60 * 1000) throw new Error('İş 15 dakikada bitmedi.');
+      await new Promise(r => setTimeout(r, 4000));
+
+      let j;
+      try {
+        const r = await fetch('https://api.openai.com/v1/responses/' + id, {
+          headers:{ 'Authorization':'Bearer ' + key }
+        });
+        j = await r.json();
+        if (!r.ok) throw new Error(j?.error?.message || ('HTTP ' + r.status));
+      } catch (e) {
+        // geçici ağ hatası: iş sürüyor, tekrar sor
+        setStatus('Bağlantı zayıf, iş sürüyor — tekrar deneniyor…');
+        continue;
+      }
+
+      if (j.status === 'queued' || j.status === 'in_progress') {
+        setStatus(j.status === 'queued' ? 'Sırada bekliyor…' : 'Render ediliyor…');
+        continue;
+      }
+
+      if (j.status === 'completed') {
+        const img = (j.output || []).find(o => o.type === 'image_generation_call' && o.result);
+        if (!img) throw new Error('Yanıt görsel içermiyor.');
+        $('result').src = 'data:image/png;base64,' + img.result;
+        $('resultWrap').hidden = false;
+        store.set('pg.job', '');
+        setStatus('Hazır · ' + fmt(stopTimer(true)));
+        try { $('resultWrap').scrollIntoView({ behavior:'smooth', block:'start' }) } catch(e) {}
+        return;
+      }
+
+      throw new Error('İş ' + j.status + ' durumunda bitti.' +
+        (j.error?.message ? ' ' + j.error.message : ''));
+    }
+  } catch (err) {
+    store.set('pg.job', '');
+    stopTimer(false);
+    setStatus(err.message, true);
   } finally {
-    if (tick) stopTimer(false);
+    polling = false;
     $('go').disabled = false; $('lamp').className = 'lamp'; updateGo();
   }
-};
+}
 
-$('clearResult').onclick = () => {
-  $('resultWrap').hidden = true;
-  $('result').src = '';
-  setStatus('');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-};
-
-/* ---------- arka plan uyarısı ---------- */
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && tick) {
-    setStatus('Uygulamadan çıkma — render iptal olabilir.', true);
-  }
-});
+/* Uygulama açılınca yarım kalan iş varsa devam et */
+(function resumeJob(){
+  let j = null;
+  try { j = JSON.parse(store.get('pg.job','') || 'null') } catch(e) {}
+  if (!j || !j.id) return;
+  if (Date.now() - j.t > 15 * 60 * 1000) { store.set('pg.job',''); return; }
+  setStatus('Yarım kalan iş bulundu, sonucu alınıyor…');
+  pollJob(j.id);
+})();
 
 /* ---------- save / share ---------- */
 $('save').onclick = () => {
