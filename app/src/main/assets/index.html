@@ -145,6 +145,8 @@
     <div class="row"><button id="pickRef">Referans ekle</button></div>
     <input type="file" id="refInput" accept="image/*" multiple hidden>
     <div class="refs" id="refs"></div>
+    <label for="handle" style="display:block;font-size:12px;color:var(--ink-dim);margin:12px 0 5px">Fotoğrafçı kullanıcı adı</label>
+    <input id="handle" type="text" placeholder="ör. pattakespictures" autocomplete="off">
     <label class="sw"><input type="checkbox" id="sendRefs"> Referansları her renderda da gönder</label>
     <p class="hint">Kapalıyken referanslar yalnızca stil çıkarmak için kullanılır — render ucuzlar ve hızlanır. Stil metni görünümü zaten taşır.</p>
   </section>
@@ -154,6 +156,19 @@
     <p class="eyebrow"><span>Stil kütüphanesi</span><span id="styleCount">0</span></p>
     <div class="row"><button id="analyze">Referanslardan stilleri çıkar</button></div>
     <div class="row" style="margin-top:8px"><button id="suggest">Bu fotoğrafa en uygun stili öner</button></div>
+    <details style="margin-top:10px">
+      <summary class="eyebrow" style="margin:0"><span>Analiz talimatı</span><span class="link">düzenle</span></summary>
+      <label for="aprompt">Stil çıkarırken modele gönderilen metin</label>
+      <textarea id="aprompt"></textarea>
+      <div class="row" style="margin-top:8px"><button id="resetAnalyze">Varsayılana dön</button></div>
+    </details>
+    <details style="margin-top:10px">
+      <summary class="eyebrow" style="margin:0"><span>Analiz talimatı</span><span class="link">düzenle</span></summary>
+      <label for="analyzePrompt">Stil çıkarırken modele gönderilen metin</label>
+      <textarea id="analyzePrompt"></textarea>
+      <div class="row" style="margin-top:8px"><button id="resetAnalyze">Varsayılana dön</button></div>
+      <p class="hint">JSON biçim şartı otomatik eklenir, onu yazmana gerek yok.</p>
+    </details>
     <div class="styles" id="styles"></div>
     <p class="hint" id="styleHint">Referansları ekledikten sonra bir kez çalıştır. Çıkan stiller kayıtlı kalır, her fotoğrafta birini seçersin.</p>
   </section>
@@ -246,6 +261,18 @@ Keep the person's face exactly identical to the reference photo. Preserve identi
 
 The first image is the photo to be graded. The following images are color reference frames — match their color science, tonality and light quality. Do not copy their content or subjects.`;
 
+const DEFAULT_ANALYZE = `Referans verdiğim görseldeki kişi fotoğraflara presets renk oluşturuyor. Ve ortaya harika görseller çıkıyor. Senden istediğim lütfen bu sayfayı incele, benim sana vereceğim fotoğraflara senin bu kişinin renk stillerini yapmanı istiyorum. Keep the face exactly the same as the original photo.
+
+Bu görseller Instagram grid ekran görüntüsü olabilir: arayüzü, butonları, yazıları, beyaz alanları ve profil öğelerini tamamen yok say — sadece ızgaradaki fotoğraf karelerine bak.
+
+Kareleri renk karakterine göre grupla ve bu kişinin birbirinden açıkça ayrı presetlerini çıkar. Kaç ayrı preset gördüğüne SEN karar ver — sayıya tamamlamak için uydurma, sıkıştırmak için de birleştirme. Gerçekten benzeyen kareleri tek stilde topla, ayrı olanları ayrı bırak. En fazla 10 stil. Genel geçer, birbirine benzeyen tarifler yazma; her stil gerçekten o karelerde gördüğün şeyi anlatsın.
+
+Her stil için:
+- name: kısa, akılda kalıcı Türkçe ad
+- desc: bir görsel üretim modeline verilecek İngilizce teknik tarif. Şunları somut belirt: beyaz dengesi/renk sıcaklığı yönü, gölgelerdeki renk kayması, highlight tonu, kontrast eğrisi (lifted veya crushed blacks), doygunluk ve hangi renklerin bastırıldığı, cilt tonu davranışı, grain/halation/film karakteri.
+
+Tarifler yalnızca renk ve ışık olsun. Kompozisyon, kadraj, konu, poz, mekan veya kişi tarif etme — bu tarifler benim kendi fotoğraflarıma uygulanacak, içerik ve yüz değişmemeli.`;
+
 const $ = id => document.getElementById(id);
 const store = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v===null?d:v }catch(e){ return d } },
@@ -262,7 +289,11 @@ let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
 
 /* ---------- restore ---------- */
 $('prompt').value = store.get('pg.prompt', DEFAULT_PROMPT);
+$('aprompt').value = store.get('pg.aprompt', DEFAULT_ANALYZE);
+$('analyzePrompt').value = store.get('pg.analyzePrompt', DEFAULT_ANALYZE);
 $('key').value = store.get('pg.key', '');
+$('handle').value = store.get('pg.handle', '');
+$('handle').oninput = () => store.set('pg.handle', $('handle').value);
 $('sendRefs').checked = store.get('pg.sendRefs','0') === '1';
 $('sendRefs').onchange = () => store.set('pg.sendRefs', $('sendRefs').checked ? '1' : '0');
 $('vision').value = store.get('pg.vision', 'gpt-5.6');
@@ -281,6 +312,8 @@ renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
 
 /* ---------- persist ---------- */
 $('prompt').oninput = () => store.set('pg.prompt', $('prompt').value);
+$('aprompt').oninput = () => store.set('pg.aprompt', $('aprompt').value);
+$('resetAnalyze').onclick = () => { $('aprompt').value = DEFAULT_ANALYZE; store.set('pg.aprompt', DEFAULT_ANALYZE); setStatus('Analiz talimatı varsayılana döndü.') };
 $('key').oninput = () => { store.set('pg.key', $('key').value); updateKeyState(); updateGo() };
 $('vision').onchange = () => store.set('pg.vision', $('vision').value);
 $('model').onchange = () => { store.set('pg.model', $('model').value); syncFidelity() };
@@ -295,6 +328,8 @@ syncFidelity();
 $('fidelity').onchange = () => store.set('pg.fidelity', $('fidelity').value);
 $('size').onchange = () => store.set('pg.size', $('size').value);
 $('quality').onchange = () => store.set('pg.quality', $('quality').value);
+$('analyzePrompt').oninput = () => store.set('pg.analyzePrompt', $('analyzePrompt').value);
+$('resetAnalyze').onclick = () => { $('analyzePrompt').value = DEFAULT_ANALYZE; store.set('pg.analyzePrompt', DEFAULT_ANALYZE); setStatus('Analiz talimatı varsayılana döndü.') };
 $('resetPrompt').onclick = () => { $('prompt').value = DEFAULT_PROMPT; store.set('pg.prompt', DEFAULT_PROMPT); setStatus('Talimat varsayılana döndü.') };
 
 function updateKeyState(){
@@ -492,24 +527,14 @@ $('analyze').onclick = async () => {
   setStatus(batch.length + ' referans analiz ediliyor…');
 
   const content = [{ type:'text', text:
-    'Bu görsellerdeki fotoğrafçı, fotoğraflara kendi preset renk düzenlemelerini uyguluyor ve ortaya ' +
-    'belirgin, tanınabilir bir renk imzası çıkıyor. Senden istediğim: bu kişinin renk dilini bir kolorist ' +
-    'gibi çöz, sonra benim vereceğim fotoğraflara aynı stilleri uygulayabilmem için tarifleri çıkar.\n\n' +
-    'ÖNCE ŞUNLARI YOK SAY: bu görseller Instagram grid ekran görüntüsü olabilir. Arayüz, butonlar, ' +
-    'yazılar, beyaz alanlar, profil öğeleri, reklam şeritleri — hiçbirine bakma. Sadece ızgaradaki ' +
-    'fotoğraf karelerine bak.\n\n' +
-    'SONRA: kareleri renk karakterine göre grupla. Bu fotoğrafçının kaç ayrı preseti olduğunu tespit et ' +
-    've birbirinden AÇIKÇA AYRI 5-6 stil çıkar. Genel geçer, birbirine benzeyen tarifler yazma; ' +
-    'her stil ölçülebilir biçimde farklı olsun ve gerçekten o karelerde gördüğün şeyi anlatsın.\n\n' +
-    'Her stil için:\n' +
-    '- name: kısa, akılda kalıcı Türkçe ad\n' +
-    '- desc: bir görsel üretim modeline verilecek İngilizce teknik tarif. Şunları SOMUT belirt: ' +
-    'beyaz dengesi/renk sıcaklığı yönü, gölgelerdeki renk kayması, highlight tonu, kontrast eğrisi ' +
-    '(lifted veya crushed blacks), doygunluk ve hangi renklerin bastırıldığı, cilt tonu davranışı, ' +
-    'grain/halation/film karakteri.\n\n' +
-    'ÖNEMLİ: tarifler yalnızca RENK ve IŞIK olsun. Kompozisyon, kadraj, konu, poz, mekan veya kişi ' +
-    'tarif etme — çünkü bu tarifler benim kendi fotoğraflarıma uygulanacak ve fotoğrafın içeriği ' +
-    'değişmemeli. Kimseyi veya hiçbir yüzü tarif etme.\n\n' +
+    $('aprompt').value + '\n\n' +
+    '--- ÇIKTI BİÇİMİ (zorunlu) ---\n' +
+    'Görseller Instagram grid ekran görüntüsü olabilir: arayüzü, yazıları, butonları, beyaz alanları ' +
+    'yok say, sadece fotoğraf karelerine bak. Stil sayısını sen belirle — en fazla 10, uydurma yok.\n' +
+    'Her stil için: name = kısa Türkçe ad. desc = bir görsel üretim modeline verilecek İngilizce ' +
+    'teknik renk tarifi (beyaz dengesi yönü, gölge renk kayması, highlight tonu, kontrast eğrisi, ' +
+    'doygunluk, bastırılan renkler, cilt tonu davranışı, grain/halation). Tarifte kompozisyon, konu, ' +
+    'poz veya kişi TARİF ETME — yalnızca renk ve ışık.\n' +
     'SADECE şu biçimde JSON dizisi döndür, başka hiçbir şey yazma: [{"name":"...","desc":"..."}]' }];
   if (styles.length) {
     content[0].text += ' Kütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
@@ -530,9 +555,14 @@ $('analyze').onclick = async () => {
     const arr = JSON.parse(txt);
     if (!Array.isArray(arr) || !arr.length) throw new Error('Stil listesi okunamadı.');
     const have = styles.map(x => x.name.toLowerCase().trim());
+    const h = $('handle').value.trim();
     const fresh = arr
       .filter(x => x && x.name && x.desc)
-      .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim() }))
+      .map(x => {
+        let n = String(x.name).trim();
+        if (h && !n.toLowerCase().startsWith(h.toLowerCase())) n = h + ' · ' + n;
+        return { name:n, desc:String(x.desc).trim() };
+      })
       .filter(x => !have.includes(x.name.toLowerCase()));
 
     styles = styles.concat(fresh);          // eskiler korunur, üstüne eklenir
