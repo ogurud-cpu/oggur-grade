@@ -820,6 +820,39 @@ $('suggest').onclick = async () => {
 function updateGo(){ $('go').disabled = !(srcFile && $('key').value.trim()) }
 function setStatus(t, err){ $('status').textContent = t; $('status').className = 'status' + (err?' err':'') }
 
+/* ---------- render sayacı ---------- */
+let tick = null, t0 = 0;
+const EXPECT = 50; // beklenen saniye; şerit buna göre dolar
+
+function fmt(sec){
+  return sec < 60 ? sec + ' sn'
+    : Math.floor(sec/60) + ':' + String(sec % 60).padStart(2,'0');
+}
+
+function startTimer(){
+  try { if (window.Android && window.Android.keepAwake) window.Android.keepAwake(true) } catch(e){}
+  t0 = Date.now();
+  $('go').classList.add('working');
+  const run = () => {
+    const sec = Math.round((Date.now() - t0) / 1000);
+    const pct = Math.min(92, (sec / EXPECT) * 92);
+    $('goFill').style.width = pct + '%';
+    $('goLbl').textContent = 'Render ediliyor · ' + fmt(sec);
+  };
+  run(); tick = setInterval(run, 1000);
+}
+
+function stopTimer(ok){
+  try { if (window.Android && window.Android.keepAwake) window.Android.keepAwake(false) } catch(e){}
+  clearInterval(tick); tick = null;
+  const sec = Math.round((Date.now() - t0) / 1000);
+  $('goFill').style.width = ok ? '100%' : '0';
+  $('go').classList.remove('working');
+  setTimeout(() => { $('goFill').style.width = '0' }, ok ? 500 : 0);
+  $('goLbl').textContent = 'Render et';
+  return sec;
+}
+
 async function fileToDataUrl(blob){
   return new Promise((res, rej) => {
     const r = new FileReader();
