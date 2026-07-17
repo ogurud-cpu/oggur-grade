@@ -606,16 +606,27 @@ $('suggest').onclick = async () => {
 
   try {
     const thumb = await downscale(srcFile, 1024);
-    const list = styles.map((st, i) => i + ') ' + st.name + ' — ' + st.desc).join('\n');
+
+    // sıra etkisini kır: stilleri karışık sun, gerçek index'i ayrı tut
+    const order = styles.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const list = order.map((real, pos) => pos + ') ' + styles[real].name + ' — ' + styles[real].desc).join('\n');
+
     const content = [
+      { type:'image_url', image_url:{ url: thumb, detail:'original' } },
       { type:'text', text:
-        'Bir kolorist gibi davran. Aşağıdaki fotoğrafı incele: ışık yönü ve sertliği, günün saati, ' +
-        'mevcut beyaz dengesi, ortam renkleri, cilt tonu, kontrast aralığı, iç/dış mekan.\n\n' +
-        'Şu stil kütüphanesinden bu fotoğrafa EN UYGUN olanı seç. Fotoğrafın mevcut ışığıyla ' +
-        'çelişmeyen, onu güçlendirecek olanı tercih et:\n' + list + '\n\n' +
-        'SADECE şu biçimde JSON döndür, başka hiçbir şey yazma: ' +
-        '{"index": <sayı>, "reason": "<tek cümle, Türkçe, neden bu fotoğrafa uyduğu>"}' },
-      { type:'image_url', image_url:{ url: thumb, detail:'original' } }
+        'Bir kolorist gibi davran. Yukarıdaki fotoğrafa bak.\n\n' +
+        'ÖNCE fotoğrafı çöz: ışığın yönü ve sertliği, günün saati, mevcut beyaz dengesi (sıcak/soğuk), ' +
+        'baskın ortam renkleri, cilt tonu, kontrast aralığı, iç mi dış mı. Bunu yazmadan seçim yapma.\n\n' +
+        'SONRA şu listeden bu fotoğrafa EN UYGUN stili seç. Fotoğrafın mevcut ışığıyla çelişmeyen, ' +
+        'onu güçlendirecek olanı tercih et. Liste sırası rastgeledir, sıraya göre karar verme; ' +
+        'her seçeneği tek tek fotoğrafla karşılaştır:\n' + list + '\n\n' +
+        'SADECE şu biçimde JSON döndür, başka hiçbir şey yazma:\n' +
+        '{"photo":"<fotoğrafın ışık ve renk analizi, tek cümle>", "index": <listedeki sayı>, ' +
+        '"reason":"<neden bu stil bu fotoğrafa uyuyor, tek cümle Türkçe>"}' }
     ];
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -628,8 +639,9 @@ $('suggest').onclick = async () => {
     let txt = (data?.choices?.[0]?.message?.content || '').trim();
     txt = txt.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
     const o = JSON.parse(txt);
-    const i = parseInt(o.index, 10);
-    if (isNaN(i) || !styles[i]) throw new Error('Öneri okunamadı.');
+    const pos = parseInt(o.index, 10);
+    if (isNaN(pos) || order[pos] === undefined) throw new Error('Öneri okunamadı.');
+    const i = order[pos];   // karışık listedeki sırayı gerçek index'e çevir
 
     rec = { i, why: String(o.reason || '') };
     styleIdx = i; store.set('pg.styleIdx', String(i));   // öneriyi doğrudan seç
