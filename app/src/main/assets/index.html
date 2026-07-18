@@ -115,6 +115,7 @@
   #bigOverlay img{max-width:100%;max-height:82vh;border-radius:10px}
   #bigOverlay p{margin:0;color:var(--ink);font-size:14px;letter-spacing:.02em}
   .chip b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}
+  .chip b{ -webkit-user-select:none; user-select:none }
   .chipDel{position:absolute;top:8px;right:8px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
   .chip span{font-size:11px;color:var(--ink-dim);line-height:1.45;display:none}
@@ -122,6 +123,9 @@
   .chipStar{position:absolute;top:8px;right:56px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
   .chipStar.on{color:var(--amber)}
+  .chipEdit{border:0;background:transparent;color:var(--ink-dim);font-size:12px;line-height:1;
+    padding:0 0 0 8px;cursor:pointer;vertical-align:1px}
+  .chip[aria-pressed="true"] .chipEdit{color:var(--amber)}
   .chipInfo{position:absolute;top:8px;right:32px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:11px;line-height:1}
   .chip.open .chipInfo{color:var(--amber);transform:rotate(180deg)}
@@ -593,8 +597,16 @@ function makeChip(st, i){
     b.insertBefore(gh, b.firstChild);
   }
 
-  b.querySelector('b').textContent = st.name;
+  const nameEl = b.querySelector('b');
+  nameEl.textContent = st.name;
   b.querySelector('span').textContent = st.desc;
+
+  const edit = document.createElement('button');
+  edit.className = 'chipEdit'; edit.textContent = '✎';
+  edit.setAttribute('aria-label', st.name + ' adını değiştir');
+  edit.onclick = ev => { ev.stopPropagation(); renameStyle(i); };
+  nameEl.appendChild(edit);
+
   if (openStyles.has(i)) b.classList.add('open');
 
   if (rec && rec.i === i) {
@@ -650,6 +662,21 @@ function makeChip(st, i){
   };
   b.appendChild(del);
   return b;
+}
+
+function renameStyle(i){
+  if (!styles[i]) return;
+  const cur = styles[i].name;
+  const v = prompt('Stil adı:', cur);
+  if (v === null) return;
+  const name = v.trim();
+  if (!name || name === cur) return;
+  if (styles.some((st, k) => k !== i && st.name.toLowerCase() === name.toLowerCase())) {
+    setStatus('Bu adda başka bir stil var.', true); return;
+  }
+  styles[i].name = name;
+  saveStyles(); renderStyles();
+  setStatus('Stil adı güncellendi.');
 }
 
 function renderStyles(){
