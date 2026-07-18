@@ -546,23 +546,73 @@ function buildPreviews(){
 
 /* Stilin renk kimliğini gösteren swatch: nötr gri gradyana (koyu→açık)
    o stilin grade'i uygulanır. Fotoğrafa gerek yok, stil çıkar çıkmaz oluşur. */
+/* Örnek sahne: gökyüzü + ten + gölge + highlight içeren basit bir kare çizilir,
+   sonra stilin grade'i uygulanır. Böylece stil gerçek tonlar üzerinde görünür.
+   Sahne bir kez çizilip önbelleğe alınır. */
+let _sceneCache = null;
+function drawScene(size){
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const x = c.getContext('2d');
+
+  // gökyüzü: üstte açık mavi → aşağı doğru soluk
+  const sky = x.createLinearGradient(0, 0, 0, size * 0.55);
+  sky.addColorStop(0, '#9fc4e8');
+  sky.addColorStop(1, '#d7e4ee');
+  x.fillStyle = sky;
+  x.fillRect(0, 0, size, size * 0.58);
+
+  // zemin/gölge alanı: alt kısım koyu nötr
+  const ground = x.createLinearGradient(0, size * 0.55, 0, size);
+  ground.addColorStop(0, '#6b6a66');
+  ground.addColorStop(1, '#2b2a28');
+  x.fillStyle = ground;
+  x.fillRect(0, size * 0.55, size, size * 0.45);
+
+  // arkada yumuşak highlight (güneş) — sağ üst
+  const sun = x.createRadialGradient(size*0.78, size*0.2, 2, size*0.78, size*0.2, size*0.5);
+  sun.addColorStop(0, 'rgba(255,244,214,0.85)');
+  sun.addColorStop(1, 'rgba(255,244,214,0)');
+  x.fillStyle = sun;
+  x.fillRect(0, 0, size, size);
+
+  // portre silüeti: ten tonlu oval (yüz) + omuz
+  // omuz
+  x.fillStyle = '#c98d6b';
+  x.beginPath();
+  x.ellipse(size*0.5, size*1.02, size*0.34, size*0.28, 0, 0, Math.PI*2);
+  x.fill();
+  // boyun
+  x.fillStyle = '#c08363';
+  x.fillRect(size*0.43, size*0.62, size*0.14, size*0.2);
+  // yüz
+  const skin = x.createLinearGradient(0, size*0.28, 0, size*0.7);
+  skin.addColorStop(0, '#e8b48f');   // aydınlık yanak
+  skin.addColorStop(1, '#b3765a');   // gölgeli çene
+  x.fillStyle = skin;
+  x.beginPath();
+  x.ellipse(size*0.5, size*0.46, size*0.19, size*0.24, 0, 0, Math.PI*2);
+  x.fill();
+  // saç: koyu, yüzün üstü
+  x.fillStyle = '#3a2c26';
+  x.beginPath();
+  x.ellipse(size*0.5, size*0.34, size*0.21, size*0.16, 0, Math.PI, Math.PI*2);
+  x.fill();
+
+  return x.getImageData(0, 0, size, size);
+}
+
 function makeSwatch(g, size){
   size = size || 132;
+  if (!_sceneCache || _sceneCache.width !== size) {
+    _sceneCache = drawScene(size);
+  }
   const c = document.createElement('canvas');
   c.width = size; c.height = size;
   const x = c.getContext('2d');
   const img = x.createImageData(size, size);
-  const p = img.data;
-  // sol-alt koyu → sağ-üst açık nötr gri taban
-  for (let yy = 0; yy < size; yy++){
-    for (let xx = 0; xx < size; xx++){
-      const t = clamp((xx / size * 0.55) + ((size - yy) / size * 0.45), 0, 1);
-      const v = t * 255;
-      const idx = (yy * size + xx) * 4;
-      p[idx] = p[idx+1] = p[idx+2] = v; p[idx+3] = 255;
-    }
-  }
-  gradePixels(p, g);
+  img.data.set(_sceneCache.data);      // taze kopya
+  gradePixels(img.data, g);
   x.putImageData(img, 0, 0);
   return c.toDataURL('image/jpeg', 0.85);
 }
@@ -610,9 +660,9 @@ function makeChip(st, i){
   b.setAttribute('aria-pressed', String(i === styleIdx));
   b.innerHTML = '<div class="chipBody"><b></b><span></span></div>';
 
-  // stilin grade'inden üretilmiş renk swatch'ı (yoksa anında üret)
-  if (!st.swatch && st.grade) {
-    try { st.swatch = makeSwatch(st.grade, 132) } catch(e) {}
+  // stilin grade'inden üretilmiş örnek-sahne swatch'ı (eski sürümü de tazele)
+  if (st.grade && (!st.swatch || st.sv !== 2)) {
+    try { st.swatch = makeSwatch(st.grade, 132); st.sv = 2; } catch(e) {}
   }
   // önizleme önceliği: fotoğrafa uygulanmış > renk swatch'ı > kaynak referans
   const previewSrc = st.prev || st.swatch || st.ref || null;
@@ -807,7 +857,7 @@ $('analyze').onclick = async () => {
           let swatch = null;
           if (grade) { try { swatch = makeSwatch(grade, 132) } catch(e) {} }
           return { name:String(x.name).trim(), desc:String(x.desc).trim(),
-                   grade, ref, swatch };
+                   grade, ref, swatch, sv: 2 };
         })
         .filter(x => !have.includes(x.name.toLowerCase()));
 
@@ -869,7 +919,7 @@ $('fillGrades').onclick = async () => {
       const i = parseInt(o.index, 10);
       if (styles[i] && o.grade && typeof o.grade === 'object') {
         styles[i].grade = o.grade;
-        try { styles[i].swatch = makeSwatch(o.grade, 132) } catch(e) {}
+        try { styles[i].swatch = makeSwatch(o.grade, 132); styles[i].sv = 2; } catch(e) {}
         n++;
       }
     });
