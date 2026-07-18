@@ -33,7 +33,14 @@
   .lamp.on{background:var(--safelight);animation:pulse 1.4s ease-out infinite}
   @keyframes pulse{to{box-shadow:0 0 0 14px rgba(193,39,45,0)}}
 
-  main{padding:16px 16px 40px;max-width:640px;margin:0 auto}
+  main{padding:16px 16px 132px;max-width:640px;margin:0 auto}
+
+  #goBar{position:fixed;left:0;right:0;bottom:0;z-index:50;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+    background:linear-gradient(to top, var(--bg) 62%, rgba(11,10,9,.86) 88%, transparent);
+    max-width:640px;margin:0 auto}
+  #goBar .status{margin:0 0 8px;min-height:0}
+  #goBar .status:empty{display:none}
   section{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
     padding:14px;margin-bottom:12px}
   .eyebrow{font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-dim);
@@ -100,31 +107,40 @@
   .addRule input{flex:1}
   .addRule button{flex:none;width:auto}
 
-  .styles{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-  .chip{text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:10px;
-    padding:11px 12px;cursor:pointer;transition:border-color .15s,background .15s}
-  .chip[aria-pressed="true"]{border-color:var(--amber);background:rgba(217,164,65,.07)}
-  .chip{position:relative;padding-right:86px;display:flex;gap:10px;align-items:flex-start}
-  .chipBody{flex:1;min-width:0}
-  .prev{flex:none;width:56px;height:56px;border-radius:6px;object-fit:cover;
-    border:1px solid var(--line);background:#0F0D0C}
-  .prev.ghost{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--ink-dim)}
+  /* yatay film şeridi: kartlar yan yana, parmakla kaydır */
+  .styles{display:flex;flex-direction:row;gap:10px;margin-top:10px;
+    overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+  .styles::-webkit-scrollbar{height:0}
+  .chip{flex:none;width:132px;scroll-snap-align:start;
+    text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:12px;
+    padding:0;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s;
+    position:relative;display:flex;flex-direction:column}
+  .chip[aria-pressed="true"]{border-color:var(--amber);transform:translateY(-2px)}
+  .chipBody{padding:8px 9px 9px}
+  .prev{width:100%;height:132px;object-fit:cover;background:#151311;display:block;border:0;border-radius:0}
+  .prev.ghost{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-dim)}
   .prev{cursor:pointer}
   #bigOverlay{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.9);
     flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px}
   #bigOverlay img{max-width:100%;max-height:82vh;border-radius:10px}
   #bigOverlay p{margin:0;color:var(--ink);font-size:14px;letter-spacing:.02em}
-  .chip b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}
-  .chip b{ -webkit-user-select:none; user-select:none }
-  .chipDel{position:absolute;top:8px;right:8px;width:22px;height:22px;padding:0;border:0;
-    border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
-  .chip span{font-size:11px;color:var(--ink-dim);line-height:1.45;display:none}
+  .chip b{display:block;font-size:12px;font-weight:600;line-height:1.3;
+    -webkit-user-select:none;user-select:none;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:31px}
+  .chip span{font-size:10px;color:var(--ink-dim);line-height:1.4;display:none}
   .chip.open span{display:block;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
-  .chipStar{position:absolute;top:8px;right:56px;width:22px;height:22px;padding:0;border:0;
-    border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
+  /* eylem düğmeleri: önizleme üstünde köşelerde */
+  .chipDel{position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border:0;
+    border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:1;z-index:2}
+  .chipStar{position:absolute;top:6px;left:6px;width:24px;height:24px;padding:0;border:0;
+    border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:14px;line-height:1;z-index:2}
   .chipStar.on{color:var(--amber)}
-  .chipEdit{border:0;background:transparent;color:var(--ink-dim);font-size:12px;line-height:1;
-    padding:0 0 0 8px;cursor:pointer;vertical-align:1px}
+  .chipInfo{position:absolute;top:6px;right:34px;width:24px;height:24px;padding:0;border:0;
+    border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:11px;line-height:1;z-index:2}
+  .chip.open .chipInfo{color:var(--amber)}
+  .chipEdit{border:0;background:transparent;color:var(--ink-dim);font-size:11px;line-height:1;
+    padding:0 0 0 6px;cursor:pointer}
   .chip[aria-pressed="true"] .chipEdit{color:var(--amber)}
   .chipInfo{position:absolute;top:8px;right:32px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:11px;line-height:1}
@@ -153,9 +169,15 @@
     <p class="eyebrow"><span>Fotoğraf</span><span id="srcInfo"></span></p>
     <div class="drop" id="srcDrop">Fotoğraf seçmek için dokun</div>
     <input type="file" id="srcInput" accept="image/*" hidden>
+    <p class="hint" id="compareHint" hidden>Görsele dokun: öncesi ↔ sonrası</p>
     <div class="row" style="margin-top:10px">
       <button id="pickSrc">Fotoğraf seç</button>
       <button id="clearSrc">Kaldır</button>
+    </div>
+    <div class="row" id="resultActions" style="margin-top:10px" hidden>
+      <button id="save">Kaydet</button>
+      <button id="share">Paylaş</button>
+      <button id="clearResult">Sonucu kaldır</button>
     </div>
   </section>
 
@@ -256,19 +278,13 @@
     </details>
   </section>
 
-  <button class="go" id="go" disabled><span class="fill" id="goFill"></span><span class="lbl" id="goLbl">Render et</span></button>
-  <p class="status" id="status"></p>
-
-  <section id="resultWrap" hidden>
-    <p class="eyebrow"><span>Sonuç</span></p>
-    <img id="result" alt="Render edilen fotoğraf">
-    <div class="row" style="margin-top:10px">
-      <button id="save">Kaydet</button>
-      <button id="share">Paylaş</button>
-      <button id="clearResult">Kaldır</button>
-    </div>
-  </section>
+  <img id="result" alt="Render edilen fotoğraf" hidden>
 </main>
+
+<div id="goBar">
+  <p class="status" id="status"></p>
+  <button class="go" id="go" disabled><span class="fill" id="goFill"></span><span class="lbl" id="goLbl">Render et</span></button>
+</div>
 
 <script>
 const DEFAULT_PROMPT = `Ultra realistic professional photography, Pattakes Ultimate Grade, luxury editorial look, natural premium color science, cinematic yet realistic, 135mm f/1.2 telephoto lens, creamy bokeh, medium format rendering, Leica + Hasselblad color depth, natural HDR, soft highlight roll-off, luminous glow, crystal clear details, premium micro contrast, subtle bloom, volumetric natural light, rich dynamic range, deep yet natural blacks, realistic skin tones, warm golden light, soft pastel sky, atmospheric depth, dimensional lighting, optical lens compression, ultra sharp subject, dreamy background separation, high-end commercial photography, Vogue editorial quality, National Geographic realism, no CGI, no illustration, no artificial look, authentic textures, 8K, extremely detailed, photorealistic.
@@ -363,6 +379,8 @@ $('srcInput').onchange = e => {
   const f = e.target.files[0]; if(!f) return;
   srcFile = f;
   rec = null;
+  resultUrl = null; showingResult = false;
+  $('compareHint').hidden = true; $('resultActions').hidden = true;
   const url = URL.createObjectURL(f);
   const pi = new Image();
   pi.onload = () => { srcImg = pi; buildPreviews() };
@@ -374,6 +392,8 @@ $('srcInput').onchange = e => {
 };
 $('clearSrc').onclick = () => {
   srcFile = null; $('srcInput').value = ''; rec = null; srcImg = null;
+  resultUrl = null; showingResult = false;
+  $('compareHint').hidden = true; $('resultActions').hidden = true; $('result').src = '';
   styles.forEach(st => st.prev = null); renderStyles();
   $('srcDrop').textContent = 'Fotoğraf seçmek için dokun';
   $('srcInfo').textContent = ''; updateGo();
@@ -1082,10 +1102,10 @@ async function pollJob(id){
         const img = (j.output || []).find(o => o.type === 'image_generation_call' && o.result);
         if (!img) throw new Error('Yanıt görsel içermiyor.');
         $('result').src = 'data:image/png;base64,' + img.result;
-        $('resultWrap').hidden = false;
+        showResult('data:image/png;base64,' + img.result);
         store.set('pg.job', '');
         setStatus('Hazır · ' + fmt(stopTimer(true)));
-        try { $('resultWrap').scrollIntoView({ behavior:'smooth', block:'start' }) } catch(e) {}
+        try { document.querySelector('main').scrollIntoView({ behavior:'smooth', block:'start' }) } catch(e) {}
         return;
       }
 
@@ -1124,11 +1144,50 @@ $('save').onclick = () => {
   a.download = 'oggur-' + Date.now() + '.png';
   a.click();
 };
+let resultUrl = null, showingResult = false;
+
+function showResult(url){
+  resultUrl = url;
+  showingResult = true;
+  $('srcDrop').innerHTML = '';
+  const im = new Image();
+  im.src = url;
+  im.dataset.role = 'result';
+  $('srcDrop').appendChild(im);
+  $('compareHint').hidden = false;
+  $('resultActions').hidden = false;
+}
+
+// Fotoğraf alanına dokun → öncesi/sonrası geçiş
+$('srcDrop').addEventListener('click', ev => {
+  if (!resultUrl || !srcFile) return;      // sonuç yoksa normal davran (fotoğraf seç)
+  ev.stopPropagation();
+  showingResult = !showingResult;
+  const im = $('srcDrop').querySelector('img');
+  if (!im) return;
+  if (showingResult) {
+    im.src = resultUrl;
+    $('compareHint').textContent = 'Sonuç — dokun: orijinali gör';
+  } else {
+    im.src = URL.createObjectURL(srcFile);
+    $('compareHint').textContent = 'Orijinal — dokun: sonucu gör';
+  }
+}, true);
+
 $('clearResult').onclick = () => {
-  $('resultWrap').hidden = true;
+  resultUrl = null; showingResult = false;
   $('result').src = '';
+  $('compareHint').hidden = true;
+  $('resultActions').hidden = true;
+  // orijinal fotoğrafı geri göster
+  if (srcFile) {
+    $('srcDrop').innerHTML = '';
+    const im = new Image(); im.src = URL.createObjectURL(srcFile);
+    $('srcDrop').appendChild(im);
+  } else {
+    $('srcDrop').textContent = 'Fotoğraf seçmek için dokun';
+  }
   setStatus('');
-  try { window.scrollTo({ top: 0, behavior: 'smooth' }) } catch(e) {}
 };
 
 /* Arka plan uyarısı: iş sunucuda sürer ama kullanıcı bilsin */
