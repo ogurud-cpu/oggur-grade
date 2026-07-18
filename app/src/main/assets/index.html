@@ -104,7 +104,7 @@
   .chip{text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:10px;
     padding:11px 12px;cursor:pointer;transition:border-color .15s,background .15s}
   .chip[aria-pressed="true"]{border-color:var(--amber);background:rgba(217,164,65,.07)}
-  .chip{position:relative;padding-right:62px;display:flex;gap:10px;align-items:flex-start}
+  .chip{position:relative;padding-right:86px;display:flex;gap:10px;align-items:flex-start}
   .chipBody{flex:1;min-width:0}
   .prev{flex:none;width:56px;height:56px;border-radius:6px;object-fit:cover;
     border:1px solid var(--line);background:#0F0D0C}
@@ -114,6 +114,9 @@
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
   .chip span{font-size:11px;color:var(--ink-dim);line-height:1.45;display:none}
   .chip.open span{display:block;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+  .chipStar{position:absolute;top:8px;right:56px;width:22px;height:22px;padding:0;border:0;
+    border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
+  .chipStar.on{color:var(--amber)}
   .chipInfo{position:absolute;top:8px;right:32px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:11px;line-height:1}
   .chip.open .chipInfo{color:var(--amber);transform:rotate(180deg)}
@@ -413,17 +416,23 @@ function downscale(file, max){
 }
 /* kaynağı göndermeden önce küçült — ham telefon fotoğrafı isteği düşürüyor */
 function shrinkToBlob(file, max){
-  return new Promise((res, rej) => {
+  return new Promise((res) => {
     const img = new Image();
+    let done = false;
+    const finish = v => { if (!done) { done = true; res(v) } };
+
     img.onload = () => {
-      const s2 = Math.min(1, max / Math.max(img.width, img.height));
-      if (s2 === 1 && file.size < 3 * 1048576) return res(file); // zaten küçükse dokunma
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.width * s2); c.height = Math.round(img.height * s2);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      c.toBlob(b => b ? res(b) : rej(new Error('Fotoğraf hazırlanamadı')), 'image/jpeg', 0.92);
+      try {
+        const s2 = Math.min(1, max / Math.max(img.width, img.height));
+        if (s2 === 1 && file.size < 3 * 1048576) return finish(file);
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * s2); c.height = Math.round(img.height * s2);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(b => finish(b || file), 'image/jpeg', 0.92);
+      } catch(e) { finish(file) }  // küçültme başarısızsa ham dosyayı gönder
     };
-    img.onerror = () => rej(new Error('Fotoğraf okunamadı'));
+    // <img> açamıyorsa (ör. HEIC): küçültmeden ham dosyayı gönder, API çözebilir
+    img.onerror = () => finish(file);
     img.src = URL.createObjectURL(file);
   });
 }
@@ -579,6 +588,17 @@ function makeChip(st, i){
     renderStyles();
   };
 
+  const star = document.createElement('button');
+  star.className = 'chipStar' + (st.fav ? ' on' : '');
+  star.textContent = st.fav ? '★' : '☆';
+  star.setAttribute('aria-label', st.name + (st.fav ? ' favoriden çıkar' : ' favorile'));
+  star.onclick = ev => {
+    ev.stopPropagation();
+    st.fav = !st.fav;
+    saveStyles(); renderStyles();
+  };
+  b.appendChild(star);
+
   const info = document.createElement('button');
   info.className = 'chipInfo'; info.textContent = '▾';
   info.setAttribute('aria-label', st.name + ' detayını aç/kapat');
@@ -609,7 +629,10 @@ function makeChip(st, i){
 
 function renderStyles(){
   const box = $('styles'); box.innerHTML = '';
-  styles.forEach((st, i) => box.appendChild(makeChip(st, i)));
+  // favoriler üstte, orijinal sıralarını koruyarak
+  const order = styles.map((st, i) => i)
+    .sort((a, b) => (styles[b].fav ? 1 : 0) - (styles[a].fav ? 1 : 0));
+  order.forEach(i => box.appendChild(makeChip(styles[i], i)));
 
   $('styleCount').textContent = styles.length;
 
@@ -857,7 +880,7 @@ async function fileToDataUrl(blob){
   return new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
-    r.onerror = () => rej(new Error('Fotoğraf okunamadı'));
+    r.onerror = () => rej(new Error('Fotoğraf okunamadı — dosya bozuk olabilir, başka bir fotoğraf dene.'));
     r.readAsDataURL(blob);
   });
 }
