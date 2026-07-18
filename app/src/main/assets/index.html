@@ -109,6 +109,11 @@
   .prev{flex:none;width:56px;height:56px;border-radius:6px;object-fit:cover;
     border:1px solid var(--line);background:#0F0D0C}
   .prev.ghost{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--ink-dim)}
+  .prev{cursor:pointer}
+  #bigOverlay{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.9);
+    flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px}
+  #bigOverlay img{max-width:100%;max-height:82vh;border-radius:10px}
+  #bigOverlay p{margin:0;color:var(--ink);font-size:14px;letter-spacing:.02em}
   .chip b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}
   .chipDel{position:absolute;top:8px;right:8px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:transparent;color:var(--ink-dim);font-size:15px;line-height:1}
@@ -375,7 +380,9 @@ $('pickRef').onclick = () => $('refInput').click();
 $('refInput').onchange = async e => {
   for (const f of e.target.files) {
     if (refs.length >= REF_MAX) { setStatus('En fazla ' + REF_MAX + ' referans kullanılabilir.', true); break }
-    refs.push({ d: await downscale(f, 1100), done: false });
+    const full = await downscale(f, 1100);
+    const thumb = await downscale(f, 240);
+    refs.push({ d: full, thumb, done: false });
   }
   saveRefs(); renderRefs(); $('refInput').value = '';
 };
@@ -437,6 +444,21 @@ function shrinkToBlob(file, max){
   });
 }
 
+
+/* ---------- önizleme büyütme ---------- */
+function showBig(src, label){
+  let ov = document.getElementById('bigOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'bigOverlay';
+    ov.innerHTML = '<img alt=""><p></p>';
+    ov.onclick = () => { ov.style.display = 'none' };
+    document.body.appendChild(ov);
+  }
+  ov.querySelector('img').src = src;
+  ov.querySelector('p').textContent = label || '';
+  ov.style.display = 'flex';
+}
 
 /* ---------- yerel önizleme motoru ----------
    Stilin sayısal değerlerini fotoğrafa canvas'ta uygular. Yaklaşıktır;
@@ -546,7 +568,7 @@ $('ruleInput').onkeydown = e => { if (e.key === 'Enter') addRule() };
 /* ---------- stil kütüphanesi ---------- */
 function saveStyles(){
   // prev = geçici önizleme, kaydetme
-  store.set('pg.styles', JSON.stringify(styles.map(({prev, ...st}) => st)));
+  store.set('pg.styles', JSON.stringify(styles.map(({prev, ...st}) => st)));  // prev geçici, ref kalıcı
 }
 
 function makeChip(st, i){
@@ -555,17 +577,20 @@ function makeChip(st, i){
   b.setAttribute('aria-pressed', String(i === styleIdx));
   b.innerHTML = '<div class="chipBody"><b></b><span></span></div>';
 
-  if (srcImg) {
-    if (st.prev) {
-      const im = document.createElement('img');
-      im.className = 'prev'; im.src = st.prev; im.alt = st.name + ' önizlemesi';
-      b.insertBefore(im, b.firstChild);
-    } else {
-      const gh = document.createElement('div');
-      gh.className = 'prev ghost'; gh.textContent = 'veri yok';
-      gh.title = 'Bu stilde sayısal renk verisi yok — "Eksik önizleme verilerini çıkar"a bas';
-      b.insertBefore(gh, b.firstChild);
-    }
+  // önizleme: önce senin fotoğrafına uygulanmış hali, o yoksa çıktığı referans görsel
+  const previewSrc = st.prev || st.ref || null;
+  if (previewSrc) {
+    const im = document.createElement('img');
+    im.className = 'prev'; im.src = previewSrc;
+    im.alt = st.name + ' önizlemesi';
+    im.title = st.prev ? 'Senin fotoğrafına uygulanmış önizleme — büyütmek için dokun'
+                       : 'Bu stilin çıktığı referans — büyütmek için dokun';
+    im.onclick = ev => { ev.stopPropagation(); showBig(previewSrc, st.name); };
+    b.insertBefore(im, b.firstChild);
+  } else {
+    const gh = document.createElement('div');
+    gh.className = 'prev ghost'; gh.textContent = 'önizleme yok';
+    b.insertBefore(gh, b.firstChild);
   }
 
   b.querySelector('b').textContent = st.name;
@@ -654,18 +679,23 @@ async function analyzeBatch(key, group){
   const content = [{ type:'text', text:
     $('aprompt').value + '\n\n' +
     '--- ÇIKTI BİÇİMİ (yalnızca teknik şart) ---\n' +
+    'Görseller sırayla numaralı: görsel 0, görsel 1, ... Her stil için "src" alanına, o stilin ' +
+    'en çok hangi görselden geldiğini yaz (0 tabanlı numara).\n' +
     'Yanıt SADECE bir JSON dizisi olsun; açıklama, başlık veya kod bloğu yazma.\n' +
     'grade alanlarının aralıkları: temp -100..100, tint -100..100, exposure -50..50, ' +
     'contrast -100..100, saturation -100..100, lift 0..100, shadowTint [r,g,b] her biri -100..100, ' +
     'highlightTint [r,g,b] her biri -100..100.\n' +
-    'Şablon: [{"name":"...","desc":"...","grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
+    'Şablon: [{"name":"...","src":0,"desc":"...","grade":{"temp":0,"tint":0,"exposure":0,"contrast":0,' +
     '"saturation":0,"lift":0,"shadowTint":[0,0,0],"highlightTint":[0,0,0]}}]' }];
 
   if (styles.length) {
     content[0].text += '\n\nKütüphanede şu stiller zaten var, bunları tekrarlama, farklı olanları çıkar: '
       + styles.map(x => x.name).join(', ') + '.';
   }
-  group.forEach(r => content.push({ type:'image_url', image_url:{ url:r.d, detail:'original' } }));
+  group.forEach((r, gi) => {
+    content.push({ type:'text', text: 'görsel ' + gi + ':' });
+    content.push({ type:'image_url', image_url:{ url:r.d, detail:'original' } });
+  });
 
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method:'POST',
@@ -708,8 +738,14 @@ $('analyze').onclick = async () => {
       const have = styles.map(x => x.name.toLowerCase().trim());
       const fresh = arr
         .filter(x => x && x.name && x.desc)
-        .map(x => ({ name:String(x.name).trim(), desc:String(x.desc).trim(),
-                     grade: (x.grade && typeof x.grade === 'object') ? x.grade : null }))
+        .map(x => {
+          const si = parseInt(x.src, 10);
+          const chosen = (g[si] && g[si].d) ? g[si] : g[0];
+          const ref = chosen ? (chosen.thumb || chosen.d) : null;
+          return { name:String(x.name).trim(), desc:String(x.desc).trim(),
+                   grade: (x.grade && typeof x.grade === 'object') ? x.grade : null,
+                   ref };  // stilin çıktığı referans görselin küçük hali
+        })
         .filter(x => !have.includes(x.name.toLowerCase()));
 
       styles = styles.concat(fresh);   // eskiler korunur, üstüne eklenir
