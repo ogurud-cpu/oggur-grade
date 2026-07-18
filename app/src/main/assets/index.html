@@ -489,6 +489,39 @@ function showBig(src, label){
    gerçek render değil, sadece seçim yapmaya yardım eder. */
 function clamp(v, a, b){ return v < a ? a : v > b ? b : v }
 
+function gradePixels(p, g){
+  const temp = (g.temp || 0) / 100;
+  const tint = (g.tint || 0) / 100;
+  const expo = (g.exposure || 0) / 100;
+  const con  = (g.contrast || 0) / 100;
+  const sat  = 1 + (g.saturation || 0) / 100;
+  const lift = (g.lift || 0) / 100;
+  const sh   = g.shadowTint || [0,0,0];
+  const hi   = g.highlightTint || [0,0,0];
+  const K_TEMP = 0.38, K_TINT = 0.26, K_LIFT = 0.42, K_SPLIT = 0.42;
+
+  for (let i = 0; i < p.length; i += 4) {
+    let r = p[i] / 255, gr = p[i+1] / 255, b = p[i+2] / 255;
+    if (expo) { r += expo; gr += expo; b += expo; }
+    r += temp * K_TEMP; b -= temp * K_TEMP;
+    gr -= tint * K_TINT; r += tint * K_TINT * 0.5; b += tint * K_TINT * 0.5;
+    if (con) { const k = 1 + con; r = (r-0.5)*k+0.5; gr = (gr-0.5)*k+0.5; b = (b-0.5)*k+0.5; }
+    if (lift) { const l = lift * K_LIFT; r = l + r*(1-l); gr = l + gr*(1-l); b = l + b*(1-l); }
+    const lum = 0.2126*r + 0.7152*gr + 0.0722*b;
+    const ws = clamp(1 - lum*1.5, 0, 1), wh = clamp((lum-0.35)*1.5, 0, 1);
+    r += (sh[0]/100)*K_SPLIT*ws + (hi[0]/100)*K_SPLIT*wh;
+    gr += (sh[1]/100)*K_SPLIT*ws + (hi[1]/100)*K_SPLIT*wh;
+    b += (sh[2]/100)*K_SPLIT*ws + (hi[2]/100)*K_SPLIT*wh;
+    if (sat !== 1) {
+      const L = 0.2126*r + 0.7152*gr + 0.0722*b;
+      r = L + (r-L)*sat; gr = L + (gr-L)*sat; b = L + (b-L)*sat;
+    }
+    p[i]   = clamp(r,0,1) * 255;
+    p[i+1] = clamp(gr,0,1) * 255;
+    p[i+2] = clamp(b,0,1) * 255;
+  }
+}
+
 function applyGrade(img, g, size){
   const c = document.createElement('canvas');
   const s = Math.min(1, size / Math.max(img.width, img.height));
@@ -496,55 +529,8 @@ function applyGrade(img, g, size){
   c.height = Math.max(1, Math.round(img.height * s));
   const x = c.getContext('2d');
   x.drawImage(img, 0, 0, c.width, c.height);
-
   const d = x.getImageData(0, 0, c.width, c.height);
-  const p = d.data;
-
-  const temp = (g.temp || 0) / 100;        // + sıcak, - soğuk
-  const tint = (g.tint || 0) / 100;        // + magenta, - yeşil
-  const expo = (g.exposure || 0) / 100;
-  const con  = (g.contrast || 0) / 100;
-  const sat  = 1 + (g.saturation || 0) / 100;
-  const lift = (g.lift || 0) / 100;        // kaldırılmış siyahlar
-  const sh   = g.shadowTint || [0,0,0];    // -100..100
-  const hi   = g.highlightTint || [0,0,0];
-
-  // etki katsayıları: gerçek grade hissi için belirgin olmalı
-  const K_TEMP = 0.38, K_TINT = 0.26, K_LIFT = 0.42, K_SPLIT = 0.42;
-
-  for (let i = 0; i < p.length; i += 4) {
-    let r = p[i] / 255, gr = p[i+1] / 255, b = p[i+2] / 255;
-
-    // pozlama
-    if (expo) { r += expo; gr += expo; b += expo; }
-
-    // ısı / tint
-    r += temp * K_TEMP; b -= temp * K_TEMP;
-    gr -= tint * K_TINT; r += tint * K_TINT * 0.5; b += tint * K_TINT * 0.5;
-
-    // kontrast (0.5 merkezli)
-    if (con) { const k = 1 + con; r = (r-0.5)*k+0.5; gr = (gr-0.5)*k+0.5; b = (b-0.5)*k+0.5; }
-
-    // lifted blacks
-    if (lift) { const l = lift * K_LIFT; r = l + r*(1-l); gr = l + gr*(1-l); b = l + b*(1-l); }
-
-    // gölge / highlight renk kayması, parlaklığa göre ağırlıklı
-    const lum = 0.2126*r + 0.7152*gr + 0.0722*b;
-    const ws = clamp(1 - lum*1.5, 0, 1), wh = clamp((lum-0.35)*1.5, 0, 1);
-    r += (sh[0]/100)*K_SPLIT*ws + (hi[0]/100)*K_SPLIT*wh;
-    gr += (sh[1]/100)*K_SPLIT*ws + (hi[1]/100)*K_SPLIT*wh;
-    b += (sh[2]/100)*K_SPLIT*ws + (hi[2]/100)*K_SPLIT*wh;
-
-    // doygunluk
-    if (sat !== 1) {
-      const L = 0.2126*r + 0.7152*gr + 0.0722*b;
-      r = L + (r-L)*sat; gr = L + (gr-L)*sat; b = L + (b-L)*sat;
-    }
-
-    p[i]   = clamp(r,0,1) * 255;
-    p[i+1] = clamp(gr,0,1) * 255;
-    p[i+2] = clamp(b,0,1) * 255;
-  }
+  gradePixels(d.data, g);
   x.putImageData(d, 0, 0);
   return c.toDataURL('image/jpeg', 0.8);
 }
@@ -556,6 +542,29 @@ function buildPreviews(){
     try { st.prev = applyGrade(srcImg, st.grade, 220) } catch(e) { st.prev = null }
   });
   renderStyles();
+}
+
+/* Stilin renk kimliğini gösteren swatch: nötr gri gradyana (koyu→açık)
+   o stilin grade'i uygulanır. Fotoğrafa gerek yok, stil çıkar çıkmaz oluşur. */
+function makeSwatch(g, size){
+  size = size || 132;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const x = c.getContext('2d');
+  const img = x.createImageData(size, size);
+  const p = img.data;
+  // sol-alt koyu → sağ-üst açık nötr gri taban
+  for (let yy = 0; yy < size; yy++){
+    for (let xx = 0; xx < size; xx++){
+      const t = clamp((xx / size * 0.55) + ((size - yy) / size * 0.45), 0, 1);
+      const v = t * 255;
+      const idx = (yy * size + xx) * 4;
+      p[idx] = p[idx+1] = p[idx+2] = v; p[idx+3] = 255;
+    }
+  }
+  gradePixels(p, g);
+  x.putImageData(img, 0, 0);
+  return c.toDataURL('image/jpeg', 0.85);
 }
 
 /* ---------- değişmez kurallar ---------- */
@@ -592,7 +601,7 @@ $('ruleInput').onkeydown = e => { if (e.key === 'Enter') addRule() };
 /* ---------- stil kütüphanesi ---------- */
 function saveStyles(){
   // prev = geçici önizleme, kaydetme
-  store.set('pg.styles', JSON.stringify(styles.map(({prev, ...st}) => st)));  // prev geçici, ref kalıcı
+  store.set('pg.styles', JSON.stringify(styles.map(({prev, ...st}) => st)));  // prev geçici; swatch+ref kalıcı
 }
 
 function makeChip(st, i){
@@ -601,14 +610,19 @@ function makeChip(st, i){
   b.setAttribute('aria-pressed', String(i === styleIdx));
   b.innerHTML = '<div class="chipBody"><b></b><span></span></div>';
 
-  // önizleme: önce senin fotoğrafına uygulanmış hali, o yoksa çıktığı referans görsel
-  const previewSrc = st.prev || st.ref || null;
+  // stilin grade'inden üretilmiş renk swatch'ı (yoksa anında üret)
+  if (!st.swatch && st.grade) {
+    try { st.swatch = makeSwatch(st.grade, 132) } catch(e) {}
+  }
+  // önizleme önceliği: fotoğrafa uygulanmış > renk swatch'ı > kaynak referans
+  const previewSrc = st.prev || st.swatch || st.ref || null;
   if (previewSrc) {
     const im = document.createElement('img');
     im.className = 'prev'; im.src = previewSrc;
     im.alt = st.name + ' önizlemesi';
-    im.title = st.prev ? 'Senin fotoğrafına uygulanmış önizleme — büyütmek için dokun'
-                       : 'Bu stilin çıktığı referans — büyütmek için dokun';
+    im.title = st.prev ? 'Fotoğrafına uygulanmış önizleme'
+             : st.swatch ? 'Bu stilin renk kimliği'
+             : 'Bu stilin çıktığı referans';
     im.onclick = ev => { ev.stopPropagation(); showBig(previewSrc, st.name); };
     b.insertBefore(im, b.firstChild);
   } else {
@@ -789,9 +803,11 @@ $('analyze').onclick = async () => {
           const si = parseInt(x.src, 10);
           const chosen = (g[si] && g[si].d) ? g[si] : g[0];
           const ref = chosen ? (chosen.thumb || chosen.d) : null;
+          const grade = (x.grade && typeof x.grade === 'object') ? x.grade : null;
+          let swatch = null;
+          if (grade) { try { swatch = makeSwatch(grade, 132) } catch(e) {} }
           return { name:String(x.name).trim(), desc:String(x.desc).trim(),
-                   grade: (x.grade && typeof x.grade === 'object') ? x.grade : null,
-                   ref };  // stilin çıktığı referans görselin küçük hali
+                   grade, ref, swatch };
         })
         .filter(x => !have.includes(x.name.toLowerCase()));
 
@@ -851,7 +867,11 @@ $('fillGrades').onclick = async () => {
     let n = 0;
     arr.forEach(o => {
       const i = parseInt(o.index, 10);
-      if (styles[i] && o.grade && typeof o.grade === 'object') { styles[i].grade = o.grade; n++ }
+      if (styles[i] && o.grade && typeof o.grade === 'object') {
+        styles[i].grade = o.grade;
+        try { styles[i].swatch = makeSwatch(o.grade, 132) } catch(e) {}
+        n++;
+      }
     });
     saveStyles(); buildPreviews(); renderStyles();
     setStatus(n ? n + ' stile önizleme verisi eklendi.' : 'Veri eklenemedi.', !n);
