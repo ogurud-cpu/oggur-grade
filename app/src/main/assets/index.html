@@ -998,6 +998,16 @@ $('go').onclick = async () => {
   if (!srcFile) return setStatus('Önce bir fotoğraf seç.', true);
   if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
 
+  // yeni render: önceki sonucu kaldır, orijinali göster
+  if (resultUrl) {
+    resultUrl = null; showingResult = false;
+    $('result').src = '';
+    $('compareHint').hidden = true; $('resultActions').hidden = true;
+    $('srcDrop').innerHTML = '';
+    const im0 = new Image(); im0.src = URL.createObjectURL(srcFile);
+    $('srcDrop').appendChild(im0);
+  }
+
   $('go').disabled = true; $('lamp').className = 'lamp on';
   sending = true;
   startTimer();
