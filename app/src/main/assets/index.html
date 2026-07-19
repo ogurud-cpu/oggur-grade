@@ -325,6 +325,7 @@ const openStyles = new Set(); // detayı açık stiller
 const REF_MAX = 12;   // toplam referans sınırı
 const BATCH = 4;      // tek istekte gönderilecek referans sayısı
 let rec = null;     // {i, why} — bu fotoğraf için önerilen stil
+let lastRefSource = '';  // son girilen kaynak adı (kolaylık için hatırla)
 let srcImg = null;  // önizleme için yüklenmiş kaynak görsel
 let polling = false; // sonuç sorgulaması sürüyor
 let sending = false; // iş henüz gönderiliyor: bu anda çıkmak işi öldürür
@@ -403,11 +404,18 @@ $('clearSrc').onclick = () => {
 /* ---------- references ---------- */
 $('pickRef').onclick = () => $('refInput').click();
 $('refInput').onchange = async e => {
-  for (const f of e.target.files) {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  // bu grup kimin? boş bırakılabilir
+  let src = prompt('Bu referanslar kimin? (stil adlarının başına eklenir, boş bırakabilirsin)', lastRefSource || '');
+  if (src === null) { $('refInput').value = ''; return; }  // iptal
+  src = src.trim();
+  lastRefSource = src;
+  for (const f of files) {
     if (refs.length >= REF_MAX) { setStatus('En fazla ' + REF_MAX + ' referans kullanılabilir.', true); break }
     const full = await downscale(f, 1100);
     const thumb = await downscale(f, 240);
-    refs.push({ d: full, thumb, done: false });
+    refs.push({ d: full, thumb, done: false, source: src });
   }
   saveRefs(); renderRefs(); $('refInput').value = '';
 };
@@ -798,7 +806,12 @@ $('analyze').onclick = async () => {
           const grade = (x.grade && typeof x.grade === 'object') ? x.grade : null;
           let swatch = null;
           if (grade) { try { swatch = makeSwatch(grade) } catch(e) {} }
-          return { name:String(x.name).trim(), desc:String(x.desc).trim(),
+          let name = String(x.name).trim();
+          const src = (chosen && chosen.source) ? chosen.source.trim() : '';
+          if (src && !name.toLowerCase().startsWith(src.toLowerCase())) {
+            name = src + ' · ' + name;
+          }
+          return { name, desc:String(x.desc).trim(),
                    grade, ref, swatch, sv: 3 };
         })
         .filter(x => !have.includes(x.name.toLowerCase()));
