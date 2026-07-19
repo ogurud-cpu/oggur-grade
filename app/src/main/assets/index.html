@@ -116,45 +116,40 @@
   .addRule button{flex:none;width:auto}
 
   /* yatay film şeridi: kartlar yan yana, parmakla kaydır */
-  .styles{display:flex;flex-direction:row;gap:10px;margin-top:10px;
-    overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;
-    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
-  .styles::-webkit-scrollbar{height:0}
-  .chip{flex:none;width:132px;scroll-snap-align:start;
+  /* 3'lü dikey ızgara: doldukça alt satıra devam eder */
+  .styles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;padding:2px}
+  .chip{scroll-snap-align:none;
     text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:12px;
     padding:0;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s;
     position:relative;display:flex;flex-direction:column}
   .chip[aria-pressed="true"]{border-color:var(--amber);transform:translateY(-2px)}
-  .chipBody{padding:8px 9px 9px}
-  .prev{width:100%;height:132px;object-fit:cover;background:#151311;display:block;border:0;border-radius:0}
-  .prev.ghost{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-dim)}
-  .refBadge{position:absolute;right:6px;bottom:44px;width:34px;height:34px;border-radius:8px;
+  .chipBody{padding:6px 7px 7px}
+  .prev{width:100%;aspect-ratio:1/1;height:auto;object-fit:cover;background:#151311;display:block;border:0;border-radius:0}
+  .prev.ghost{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--ink-dim);aspect-ratio:1/1}
+  .refBadge{position:absolute;right:5px;bottom:34px;width:26px;height:26px;border-radius:6px;
     object-fit:cover;border:2px solid var(--bg);box-shadow:0 1px 4px rgba(0,0,0,.5);z-index:3;cursor:pointer}
   .prev{cursor:pointer}
   #bigOverlay{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.9);
     flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px}
   #bigOverlay img{max-width:100%;max-height:82vh;border-radius:10px}
   #bigOverlay p{margin:0;color:var(--ink);font-size:14px;letter-spacing:.02em}
-  .chip b{display:block;font-size:12px;font-weight:600;line-height:1.3;
+  .chip b{display:block;font-size:10px;font-weight:600;line-height:1.25;
     -webkit-user-select:none;user-select:none;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:31px}
-  .chip span{font-size:10px;color:var(--ink-dim);line-height:1.4;display:none}
-  .chip.open span{display:block;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:25px}
+  .chip span{font-size:9px;color:var(--ink-dim);line-height:1.35;display:none}
+  .chip.open span{display:block;margin-top:5px;padding-top:5px;border-top:1px solid var(--line)}
   /* eylem düğmeleri: önizleme üstünde köşelerde */
-  .chipDel{position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border:0;
-    border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:1;z-index:2}
-  .chipStar{position:absolute;top:6px;left:6px;width:24px;height:24px;padding:0;border:0;
+  .chipDel{position:absolute;top:4px;right:4px;width:22px;height:22px;padding:0;border:0;
     border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:14px;line-height:1;z-index:2}
+  .chipStar{position:absolute;top:4px;left:4px;width:22px;height:22px;padding:0;border:0;
+    border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;z-index:2}
   .chipStar.on{color:var(--amber)}
-  .chipInfo{position:absolute;top:6px;right:34px;width:24px;height:24px;padding:0;border:0;
-    border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:11px;line-height:1;z-index:2}
+  .chipInfo{position:absolute;top:4px;right:30px;width:22px;height:22px;padding:0;border:0;
+    border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:10px;line-height:1;z-index:2}
   .chip.open .chipInfo{color:var(--amber)}
-  .chipEdit{border:0;background:transparent;color:var(--ink-dim);font-size:11px;line-height:1;
-    padding:0 0 0 6px;cursor:pointer}
+  .chipEdit{border:0;background:transparent;color:var(--ink-dim);font-size:10px;line-height:1;
+    padding:0 0 0 5px;cursor:pointer}
   .chip[aria-pressed="true"] .chipEdit{color:var(--amber)}
-  .chipInfo{position:absolute;top:8px;right:32px;width:22px;height:22px;padding:0;border:0;
-    border-radius:50%;background:transparent;color:var(--ink-dim);font-size:11px;line-height:1}
-  .chip.open .chipInfo{color:var(--amber);transform:rotate(180deg)}
   .chip[aria-pressed="true"] b{color:var(--amber)}
   .chip.rec{border-color:var(--amber)}
   .badge{display:inline-block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;
