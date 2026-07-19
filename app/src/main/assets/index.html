@@ -53,6 +53,14 @@
   button{font:inherit;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);
     border-radius:10px;padding:11px 14px;cursor:pointer}
   button:active{transform:translateY(1px)}
+  /* sonuç eylem butonları — hiyerarşili, simgesiz */
+  .btn-primary{background:var(--amber);border-color:var(--amber);color:#0B0A09;font-weight:600;
+    letter-spacing:.02em;padding:13px 14px}
+  .btn-secondary{background:transparent;border-color:var(--amber);color:var(--amber);
+    font-weight:600;padding:13px 14px}
+  .btn-ghost{background:transparent;border-color:transparent;color:var(--ink-dim);
+    font-size:13px;padding:11px 14px}
+  .btn-ghost:active{color:var(--ink)}
   button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   .row{display:flex;gap:8px}
   .row>*{flex:1}
@@ -175,11 +183,15 @@
       <button id="pickSrc">Fotoğraf seç</button>
       <button id="clearSrc">Kaldır</button>
     </div>
-    <div class="row" id="resultActions" style="margin-top:10px" hidden>
-      <button id="compareBtn">Orijinali göster</button>
-      <button id="save">Kaydet</button>
-      <button id="share">Paylaş</button>
-      <button id="clearResult">Sonucu kaldır</button>
+    <div id="resultActions" hidden>
+      <div class="row" style="margin-top:12px">
+        <button id="save" class="btn-primary">Kaydet</button>
+        <button id="share" class="btn-secondary">Paylaş</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="compareBtn" class="btn-ghost">Orijinali göster</button>
+        <button id="clearResult" class="btn-ghost">Sonucu kaldır</button>
+      </div>
     </div>
   </section>
 
