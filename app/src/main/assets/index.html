@@ -116,8 +116,10 @@
   .addRule button{flex:none;width:auto}
 
   /* yatay film şeridi: kartlar yan yana, parmakla kaydır */
-  /* 3'lü dikey ızgara: doldukça alt satıra devam eder */
+  /* stil ızgarası: referanslarla aynı düzen — 3 sütun, doldukça alt satır */
   .styles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;padding:2px}
+  .stylePage{display:contents}
+  .styleDots{display:none}
   .chip{scroll-snap-align:none;
     text-align:left;background:#0F0D0C;border:1px solid var(--line);border-radius:12px;
     padding:0;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s;
@@ -133,7 +135,7 @@
     flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px}
   #bigOverlay img{max-width:100%;max-height:82vh;border-radius:10px}
   #bigOverlay p{margin:0;color:var(--ink);font-size:14px;letter-spacing:.02em}
-  .chip b{display:block;font-size:10px;font-weight:600;line-height:1.25;
+  .chip b{display:block;font-size:11px;font-weight:600;line-height:1.3;
     -webkit-user-select:none;user-select:none;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:25px}
   .chip span{font-size:9px;color:var(--ink-dim);line-height:1.35;display:none}
@@ -215,6 +217,7 @@
       <p class="hint">JSON biçim şartı otomatik eklenir, onu yazmana gerek yok.</p>
     </details>
     <div class="styles" id="styles"></div>
+    <div class="styleDots" id="styleDots" hidden></div>
     <p class="hint" id="styleHint">Referansları ekledikten sonra bir kez çalıştır. Çıkan stiller kayıtlı kalır, her fotoğrafta birini seçersin.</p>
   </section>
 
@@ -297,11 +300,13 @@
 
 <script>
 var _sceneData = null, _sceneReady = false, _scenePending = [];
-const DEFAULT_PROMPT = `Ultra realistic professional photography, Pattakes Ultimate Grade, luxury editorial look, natural premium color science, cinematic yet realistic, 135mm f/1.2 telephoto lens, creamy bokeh, medium format rendering, Leica + Hasselblad color depth, natural HDR, soft highlight roll-off, luminous glow, crystal clear details, premium micro contrast, subtle bloom, volumetric natural light, rich dynamic range, deep yet natural blacks, realistic skin tones, warm golden light, soft pastel sky, atmospheric depth, dimensional lighting, optical lens compression, ultra sharp subject, dreamy background separation, high-end commercial photography, Vogue editorial quality, National Geographic realism, no CGI, no illustration, no artificial look, authentic textures, 8K, extremely detailed, photorealistic.
+const DEFAULT_PROMPT = `Apply a strong, decisive color grade to this photograph, following the color recipe given below. This is a color-grading task: push the white balance, tones, contrast and color character clearly and confidently so the graded look is clearly visible — not a subtle touch-up. Editorial, cinematic photographic quality with rich, intentional color.
 
-Keep the person's face exactly identical to the reference photo. Preserve identity, facial features, eyes, skin texture, expression, face shape and natural skin tone exactly. Do not beautify, reshape, de-age or modify the face in any way. Maintain true photographic realism. No CGI, no illustration, no 3D render.
+Grade the whole scene — sky, background, environment and clothing — to fully match the target look. Keep it photographic and real: no CGI, no illustration, no 3D render, real textures and natural film-like tonality.
 
-The first image is the photo to be graded. The following images are color reference frames — match their color science, tonality and light quality. Do not copy their content or subjects.`;
+Exception — the face: keep the person's face identical to the original. Preserve their identity, facial features, eyes, expression, face shape and natural skin tone. Do not beautify, reshape or de-age the face. The color grade may touch the overall light on the skin, but facial identity must stay exactly the same.
+
+The first image is the photo to grade. Any following images are color reference frames — match their color science, tonality and light quality, but do not copy their content, subjects or composition.`;
 
 const DEFAULT_ANALYZE = `Referans verdiğim görsellerdeki fotoğrafçı, fotoğraflarına kendi preset renk düzenlemelerini uyguluyor ve ortaya tanınabilir bir renk imzası çıkıyor. Senden istediğim: bu renk dilini bir kolorist gibi çöz, sonra benim vereceğim fotoğraflara aynı stilleri uygulayabilmem için tarifleri çıkar. Keep the face exactly the same as the original photo.
 
@@ -358,6 +363,7 @@ try { rules = JSON.parse(store.get('pg.rules','[]')) } catch(e) { rules = [] }
 styleIdx = parseInt(store.get('pg.styleIdx','-1'), 10);
 if (isNaN(styleIdx) || styleIdx >= styles.length) styleIdx = -1;
 renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
+$('styles').addEventListener('scroll', updateStyleDots, { passive: true });
 
 /* ---------- persist ---------- */
 $('prompt').oninput = () => store.set('pg.prompt', $('prompt').value);
@@ -736,7 +742,31 @@ function renderStyles(){
   // favoriler üstte, orijinal sıralarını koruyarak
   const order = styles.map((st, i) => i)
     .sort((a, b) => (styles[b].fav ? 1 : 0) - (styles[a].fav ? 1 : 0));
-  order.forEach(i => box.appendChild(makeChip(styles[i], i)));
+
+  const PER_PAGE = 9;   // 3 sütun × 3 satır
+  const pages = Math.max(1, Math.ceil(order.length / PER_PAGE));
+
+  for (let pg = 0; pg < pages; pg++) {
+    const page = document.createElement('div');
+    page.className = 'stylePage';
+    order.slice(pg * PER_PAGE, pg * PER_PAGE + PER_PAGE)
+         .forEach(i => page.appendChild(makeChip(styles[i], i)));
+    box.appendChild(page);
+  }
+
+  // nokta göstergesi
+  const dots = $('styleDots');
+  dots.innerHTML = '';
+  if (pages > 1) {
+    for (let pg = 0; pg < pages; pg++) {
+      const d = document.createElement('span');
+      d.className = 'dot' + (pg === 0 ? ' on' : '');
+      dots.appendChild(d);
+    }
+    dots.hidden = false;
+  } else {
+    dots.hidden = true;
+  }
 
   $('styleCount').textContent = styles.length;
 
@@ -750,7 +780,18 @@ function renderStyles(){
     : fresh
       ? 'Sarı çerçeveli ' + fresh + ' referans henüz analiz edilmedi. Çıkan stiller mevcutların üstüne eklenir, hiçbiri silinmez.'
       : (styleIdx >= 0 ? 'Seçili: ' + styles[styleIdx].name + ' — tekrar dokunursan seçim kalkar.'
-                       : 'Bir stil seç, yoksa yalnızca ana talimat uygulanır.');
+                       : 'Sayfayı yana kaydır, stil seç.');
+}
+
+/* aktif sayfaya göre noktaları güncelle */
+function updateStyleDots(){
+  const box = $('styles');
+  const dots = $('styleDots').children;
+  if (!dots.length) return;
+  const pageW = box.clientWidth;
+  const active = Math.round(box.scrollLeft / pageW);
+  for (let i = 0; i < dots.length; i++)
+    dots[i].className = 'dot' + (i === active ? ' on' : '');
 }
 
 /* Tek grup için analiz isteği — sonuç: yeni stil dizisi */
