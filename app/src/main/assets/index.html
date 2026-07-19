@@ -171,12 +171,12 @@
     <p class="eyebrow"><span>Fotoğraf</span><span id="srcInfo"></span></p>
     <div class="drop" id="srcDrop">Fotoğraf seçmek için dokun</div>
     <input type="file" id="srcInput" accept="image/*" hidden>
-    <p class="hint" id="compareHint" hidden>Görsele dokun: öncesi ↔ sonrası</p>
     <div class="row" style="margin-top:10px">
       <button id="pickSrc">Fotoğraf seç</button>
       <button id="clearSrc">Kaldır</button>
     </div>
     <div class="row" id="resultActions" style="margin-top:10px" hidden>
+      <button id="compareBtn">Orijinali göster</button>
       <button id="save">Kaydet</button>
       <button id="share">Paylaş</button>
       <button id="clearResult">Sonucu kaldır</button>
@@ -384,7 +384,7 @@ $('srcInput').onchange = e => {
   srcFile = f;
   rec = null;
   resultUrl = null; showingResult = false;
-  $('compareHint').hidden = true; $('resultActions').hidden = true;
+  $('resultActions').hidden = true;
   const url = URL.createObjectURL(f);
   const pi = new Image();
   pi.onload = () => { srcImg = pi; buildPreviews() };
@@ -397,7 +397,7 @@ $('srcInput').onchange = e => {
 $('clearSrc').onclick = () => {
   srcFile = null; $('srcInput').value = ''; rec = null; srcImg = null;
   resultUrl = null; showingResult = false;
-  $('compareHint').hidden = true; $('resultActions').hidden = true; $('result').src = '';
+  $('resultActions').hidden = true; $('result').src = '';
   styles.forEach(st => st.prev = null); renderStyles();
   $('srcDrop').textContent = 'Fotoğraf seçmek için dokun';
   $('srcInfo').textContent = ''; updateGo();
@@ -1026,7 +1026,7 @@ $('go').onclick = async () => {
   if (resultUrl) {
     resultUrl = null; showingResult = false;
     $('result').src = '';
-    $('compareHint').hidden = true; $('resultActions').hidden = true;
+    $('resultActions').hidden = true;
     $('srcDrop').innerHTML = '';
     const im0 = new Image(); im0.src = URL.createObjectURL(srcFile);
     $('srcDrop').appendChild(im0);
@@ -1200,30 +1200,33 @@ function showResult(url){
   im.src = url;
   im.dataset.role = 'result';
   $('srcDrop').appendChild(im);
-  $('compareHint').hidden = false;
+  $('compareBtn').textContent = 'Orijinali göster';
   $('resultActions').hidden = false;
 }
 
-// Fotoğraf alanına dokun → öncesi/sonrası geçiş
+// Sonuç varken fotoğraf alanına dokunmak fotoğraf seçmeyi AÇMASIN
 $('srcDrop').addEventListener('click', ev => {
-  if (!resultUrl || !srcFile) return;      // sonuç yoksa normal davran (fotoğraf seç)
-  ev.stopPropagation();
+  if (resultUrl) { ev.stopPropagation(); }   // sonuç gösteriliyorsa dokunmayı yut
+}, true);
+
+// Öncesi/sonrası geçişi artık düğmeyle
+$('compareBtn').onclick = () => {
+  if (!resultUrl || !srcFile) return;
   showingResult = !showingResult;
   const im = $('srcDrop').querySelector('img');
   if (!im) return;
   if (showingResult) {
     im.src = resultUrl;
-    $('compareHint').textContent = 'Sonuç — dokun: orijinali gör';
+    $('compareBtn').textContent = 'Orijinali göster';
   } else {
     im.src = URL.createObjectURL(srcFile);
-    $('compareHint').textContent = 'Orijinal — dokun: sonucu gör';
+    $('compareBtn').textContent = 'Sonucu göster';
   }
-}, true);
+};
 
 $('clearResult').onclick = () => {
   resultUrl = null; showingResult = false;
   $('result').src = '';
-  $('compareHint').hidden = true;
   $('resultActions').hidden = true;
   // orijinal fotoğrafı geri göster
   if (srcFile) {
