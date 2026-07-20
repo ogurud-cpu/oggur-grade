@@ -296,10 +296,6 @@
         <option value="medium">Orta</option>
         <option value="low">Düşük</option>
       </select>
-      <label style="display:flex;align-items:center;gap:9px;margin-top:12px;cursor:pointer">
-        <input type="checkbox" id="askBeforeRender" style="width:18px;height:18px;flex:none">
-        <span>Render'dan önce onay sor (kotayı korur)</span>
-      </label>
       <p class="hint">Anahtar yalnızca bu cihazda saklanır, hiçbir yere gönderilmez.</p>
     </details>
   </section>
@@ -375,11 +371,6 @@ try { rules = JSON.parse(store.get('pg.rules','[]')) } catch(e) { rules = [] }
 styleIdx = parseInt(store.get('pg.styleIdx','-1'), 10);
 if (isNaN(styleIdx) || styleIdx >= styles.length) styleIdx = -1;
 renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
-// render onayı: varsayılan açık
-$('askBeforeRender').checked = localStorage.getItem('pg.askBeforeRender') !== '0';
-$('askBeforeRender').onchange = () => {
-  localStorage.setItem('pg.askBeforeRender', $('askBeforeRender').checked ? '1' : '0');
-};
 $('styles').addEventListener('scroll', updateStyleDots, { passive: true });
 
 /* ---------- persist ---------- */
@@ -1139,17 +1130,6 @@ $('go').onclick = async () => {
   if (!srcFile) return setStatus('Önce bir fotoğraf seç.', true);
   if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
 
-  // render öncesi onay — boşa kota harcamayı önler (ayarlardan kapatılabilir)
-  if (localStorage.getItem('pg.askBeforeRender') !== '0') {
-    const stName = styleIdx >= 0 ? styles[styleIdx].name : 'yalnızca ana talimat';
-    const q = $('quality') ? $('quality').value : 'high';
-    const costNote = q === 'low' ? '~1 sent (ucuz mod)' : '~2-4 sent';
-    if (!confirm('Render edilsin mi?\n\nStil: ' + stName + '\nTahmini maliyet: ' + costNote +
-                 '\n\n(Bu soruyu Bağlantı ayarlarından kapatabilirsin.)')) {
-      return;
-    }
-  }
-
   // yeni render: önceki sonucu kaldır, orijinali göster
   if (resultUrl) {
     resultUrl = null; showingResult = false;
@@ -1165,7 +1145,7 @@ $('go').onclick = async () => {
   startTimer();
   setStatus('İş gönderiliyor…');
 
-  const sizes = [1600, 1200, 900];   // ağ düşerse küçülterek tekrar dene
+  const sizes = [1024, 896, 768];   // maliyet için küçük tutulur; ağ düşerse daha da küçültür
   let lastErr = null;
 
   try {
