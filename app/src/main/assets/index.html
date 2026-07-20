@@ -65,6 +65,8 @@
   .btn-ghost{background:transparent;border-color:transparent;color:var(--ink-dim);
     font-size:13px;padding:11px 14px}
   .btn-ghost:active{color:var(--ink)}
+  .resultInfo{margin:12px 0 0;font-size:12px;color:var(--amber);letter-spacing:.03em;
+    text-align:center;font-weight:600}
   button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   .row{display:flex;gap:8px}
   .row>*{flex:1}
@@ -190,6 +192,7 @@
       <button id="clearSrc">Kaldır</button>
     </div>
     <div id="resultActions" hidden>
+      <p id="resultInfo" class="resultInfo" hidden></p>
       <div class="row" style="margin-top:12px">
         <button id="save" class="btn-primary">Kaydet</button>
         <button id="share" class="btn-secondary">Paylaş</button>
@@ -1145,6 +1148,14 @@ $('go').onclick = async () => {
   startTimer();
   setStatus('İş gönderiliyor…');
 
+  // bu render'ın künyesi — sonuçta ve dosya adında gösterilir
+  const qLabel = { high:'Yüksek', medium:'Orta', low:'Düşük' }[$('quality').value] || $('quality').value;
+  _lastRenderInfo = {
+    style: styleIdx >= 0 ? styles[styleIdx].name : 'Ana talimat',
+    model: $('model').value,
+    quality: qLabel
+  };
+
   const sizes = [1024, 896, 768];   // maliyet için küçük tutulur; ağ düşerse daha da küçültür
   let lastErr = null;
 
@@ -1289,16 +1300,26 @@ async function pollJob(id){
 /* ---------- save / share ---------- */
 $('save').onclick = () => {
   const b64 = $('result').src.split(',')[1];
+  // dosya adına stil adını ekle (galeride karışmasın)
+  const trMap = {ç:'c',ğ:'g',ı:'i',ö:'o',ş:'s',ü:'u',Ç:'c',Ğ:'g',İ:'i',Ö:'o',Ş:'s',Ü:'u'};
+  const slug = (_lastRenderInfo && _lastRenderInfo.style ? _lastRenderInfo.style : 'grade')
+    .replace(/[çğıöşüÇĞİÖŞÜ]/g, c => trMap[c] || c)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'grade';
+  const fname = 'oggur-' + slug + '-' + Date.now() + '.png';
   if (window.Android && window.Android.savePng) {
-    window.Android.savePng(b64, 'oggur-' + Date.now() + '.png');
+    window.Android.savePng(b64, fname);
     return;
   }
   const a = document.createElement('a');
   a.href = $('result').src;
-  a.download = 'oggur-' + Date.now() + '.png';
+  a.download = fname;
   a.click();
 };
 let resultUrl = null, showingResult = false;
+let _lastRenderInfo = null;   // son render'ın stil/model/kalite künyesi
 
 function showResult(url){
   resultUrl = url;
@@ -1310,6 +1331,12 @@ function showResult(url){
   $('srcDrop').appendChild(im);
   $('compareBtn').textContent = 'Orijinali göster';
   $('resultActions').hidden = false;
+  // hangi stil/model/kalite ile üretildi — künye göster
+  if (_lastRenderInfo) {
+    $('resultInfo').textContent = _lastRenderInfo.style + '  ·  ' +
+      _lastRenderInfo.model + '  ·  ' + _lastRenderInfo.quality;
+    $('resultInfo').hidden = false;
+  }
 }
 
 // Sonuç varken fotoğraf alanına dokunmak fotoğraf seçmeyi AÇMASIN
