@@ -209,6 +209,7 @@
     <div class="row"><button id="analyze">Referanslardan stilleri çıkar</button></div>
     <div class="row" style="margin-top:8px"><button id="suggest">Bu fotoğrafa en uygun stili öner</button></div>
     <div class="row" style="margin-top:8px"><button id="fillGrades">Eksik önizleme verilerini çıkar</button></div>
+    <div class="row" style="margin-top:8px"><button id="dedupe">Tekrarları temizle</button></div>
     <details style="margin-top:10px">
       <summary class="eyebrow" style="margin:0"><span class="sumRow"><span>Analiz talimatı</span><span class="link">düzenle</span></span></summary>
       <label for="aprompt">Stil çıkarırken modele gönderilen metin</label>
@@ -942,6 +943,58 @@ $('fillGrades').onclick = async () => {
   } finally {
     $('fillGrades').disabled = false; $('lamp').className = 'lamp';
   }
+};
+
+/* ---------- tekrarları temizle ---------- */
+// grade değerleri birbirine çok yakın mı? (basit yakınlık)
+function gradesClose(a, b){
+  if (!a || !b) return false;
+  const keys = ['temp','tint','exposure','contrast','saturation','lift'];
+  for (const k of keys)
+    if (Math.abs((a[k]||0) - (b[k]||0)) > 8) return false;   // 8 birimden fazla fark = farklı
+  const tri = (x,y) => {
+    x = x||[0,0,0]; y = y||[0,0,0];
+    for (let i=0;i<3;i++) if (Math.abs((x[i]||0)-(y[i]||0)) > 12) return false;
+    return true;
+  };
+  return tri(a.shadowTint,b.shadowTint) && tri(a.highlightTint,b.highlightTint);
+}
+// ismi sadeleştir: küçük harf, kaynak öneki ve noktalama at
+function normName(s){
+  return (s||'').toLowerCase()
+    .replace(/^.*·\s*/, '')          // "pattakes · X" -> "X"
+    .replace(/[^a-zçğıöşü0-9]+/gi,' ')
+    .trim();
+}
+$('dedupe').onclick = () => {
+  if (styles.length < 2) return setStatus('Temizlenecek tekrar yok.');
+  const remove = new Set();
+  for (let i = 0; i < styles.length; i++) {
+    if (remove.has(i)) continue;
+    for (let j = i + 1; j < styles.length; j++) {
+      if (remove.has(j)) continue;
+      const sameName = normName(styles[i].name) === normName(styles[j].name);
+      const sameLook = gradesClose(styles[i].grade, styles[j].grade);
+      // isim aynı, VEYA hem isim benzer değil ama renk neredeyse birebir
+      if (sameName || sameLook) {
+        // hangisini tutalım: favori olanı koru; ikisi de favori/değilse ilkini tut
+        const keepJ = styles[j].fav && !styles[i].fav;
+        remove.add(keepJ ? i : j);
+        if (keepJ) break;   // i silinecek, iç döngüden çık
+      }
+    }
+  }
+  if (!remove.size) return setStatus('Tekrar bulunamadı — tüm stiller yeterince farklı.');
+
+  const favProtected = [...remove].filter(i => styles[i].fav).length;
+  const msg = remove.size + ' tekrar stil bulundu. Silinsin mi?' +
+    (favProtected ? '' : ' (Favoriler korunur.)');
+  if (!confirm(msg)) return;
+
+  styles = styles.filter((_, i) => !remove.has(i));
+  if (styleIdx >= 0 && remove.has(styleIdx)) styleIdx = -1;
+  saveStyles(); renderStyles();
+  setStatus(remove.size + ' tekrar stil silindi. ' + styles.length + ' stil kaldı.');
 };
 
 /* ---------- stil önerisi ---------- */
