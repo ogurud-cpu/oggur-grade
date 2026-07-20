@@ -27,6 +27,10 @@
   header{position:relative;padding:22px 20px 18px;border-bottom:1px solid var(--line);
     background:radial-gradient(120% 100% at 50% -30%, rgba(193,39,45,.28), transparent 65%)}
   h1{margin:0;font-size:13px;letter-spacing:.42em;text-transform:uppercase;font-weight:600}
+  .brand{display:flex;align-items:center;gap:12px}
+  .ggMark{flex:none;width:38px;height:38px;border:2px solid var(--amber);border-radius:9px;
+    display:flex;align-items:center;justify-content:center;color:var(--amber);
+    font-weight:800;font-size:17px;letter-spacing:-2px}
   header p{margin:6px 0 0;font-size:12px;color:var(--ink-dim);letter-spacing:.02em}
   .lamp{position:absolute;top:26px;right:20px;width:9px;height:9px;border-radius:50%;
     background:var(--safelight-dim);box-shadow:0 0 0 0 rgba(193,39,45,.5)}
@@ -166,8 +170,13 @@
 <body>
 <header>
   <div class="lamp" id="lamp"></div>
-  <h1>Oggur Grade</h1>
-  <p>Referans kareler + fotoğrafın → editoryal yeniden render</p>
+  <div class="brand">
+    <div class="ggMark">GG</div>
+    <div>
+      <h1>Oggur Grade</h1>
+      <p>Referans kareler + fotoğrafın → editoryal yeniden render</p>
+    </div>
+  </div>
 </header>
 
 <main>
@@ -287,6 +296,10 @@
         <option value="medium">Orta</option>
         <option value="low">Düşük</option>
       </select>
+      <label style="display:flex;align-items:center;gap:9px;margin-top:12px;cursor:pointer">
+        <input type="checkbox" id="askBeforeRender" style="width:18px;height:18px;flex:none">
+        <span>Render'dan önce onay sor (kotayı korur)</span>
+      </label>
       <p class="hint">Anahtar yalnızca bu cihazda saklanır, hiçbir yere gönderilmez.</p>
     </details>
   </section>
@@ -362,6 +375,11 @@ try { rules = JSON.parse(store.get('pg.rules','[]')) } catch(e) { rules = [] }
 styleIdx = parseInt(store.get('pg.styleIdx','-1'), 10);
 if (isNaN(styleIdx) || styleIdx >= styles.length) styleIdx = -1;
 renderRefs(); renderStyles(); renderRules(); updateKeyState(); updateGo();
+// render onayı: varsayılan açık
+$('askBeforeRender').checked = localStorage.getItem('pg.askBeforeRender') !== '0';
+$('askBeforeRender').onchange = () => {
+  localStorage.setItem('pg.askBeforeRender', $('askBeforeRender').checked ? '1' : '0');
+};
 $('styles').addEventListener('scroll', updateStyleDots, { passive: true });
 
 /* ---------- persist ---------- */
@@ -1120,6 +1138,17 @@ $('go').onclick = async () => {
   const key = $('key').value.trim();
   if (!srcFile) return setStatus('Önce bir fotoğraf seç.', true);
   if (!key) return setStatus('Ayarlardan API anahtarını gir.', true);
+
+  // render öncesi onay — boşa kota harcamayı önler (ayarlardan kapatılabilir)
+  if (localStorage.getItem('pg.askBeforeRender') !== '0') {
+    const stName = styleIdx >= 0 ? styles[styleIdx].name : 'yalnızca ana talimat';
+    const q = $('quality') ? $('quality').value : 'high';
+    const costNote = q === 'low' ? '~1 sent (ucuz mod)' : '~2-4 sent';
+    if (!confirm('Render edilsin mi?\n\nStil: ' + stName + '\nTahmini maliyet: ' + costNote +
+                 '\n\n(Bu soruyu Bağlantı ayarlarından kapatabilirsin.)')) {
+      return;
+    }
+  }
 
   // yeni render: önceki sonucu kaldır, orijinali göster
   if (resultUrl) {
