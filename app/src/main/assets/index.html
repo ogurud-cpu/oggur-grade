@@ -1173,7 +1173,15 @@ $('go').onclick = async () => {
         }
 
         const tool = { type:'image_generation', model: $('model').value, quality: $('quality').value };
-        if ($('size').value !== 'auto') tool.size = $('size').value;
+        // çıktı oranı: elle seçilmişse onu kullan; "Otomatik" ise fotoğrafın oranına göre seç
+        if ($('size').value !== 'auto') {
+          tool.size = $('size').value;
+        } else if (srcImg && srcImg.naturalWidth && srcImg.naturalHeight) {
+          const r = srcImg.naturalWidth / srcImg.naturalHeight;
+          tool.size = r > 1.2 ? '1536x1024'      // belirgin yatay
+                    : r < 0.83 ? '1024x1536'     // belirgin dikey
+                    : '1024x1024';               // kareye yakın
+        }
         if ($('model').value === 'gpt-image-1' || $('model').value === 'gpt-image-1.5') {
           tool.input_fidelity = $('fidelity').value;
         }
